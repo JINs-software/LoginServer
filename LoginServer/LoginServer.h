@@ -3,7 +3,15 @@
 #include "LoginServerConfig.h"
 #include "LOGIN_PROTOCOL.h"
 
-#include "CRedisConn.h"
+//#include "CRedisConn.h"
+
+
+
+namespace RedisCpp {
+	class CRedisConn;
+}
+
+
 
 class LoginServer : public CLanOdbcServer
 {
@@ -30,7 +38,8 @@ private:
 	/*********************************
 	* Redis
 	*********************************/
-	RedisCpp::CRedisConn		m_RedisConn;
+
+	RedisCpp::CRedisConn*		m_RedisConn;	// 'm_RedisConn' 빨간줄, 불완전한 형식은 사용할 수 없습니다.
 
 public:
 	//CLanOdbcServer(int32 dbConnectionCnt, WCHAR* odbcConnStr,
@@ -38,8 +47,7 @@ public:
 	//	DWORD numOfIocpConcurrentThrd, uint16 numOfWorkerThreads,
 	//	uint16 maxOfConnections
 	//)
-	LoginServer(int32 dbConnectionCnt, WCHAR* odbcConnStr, 
-		const char* serverIP, uint16 serverPort,
+	LoginServer(int32 dbConnectionCnt, const WCHAR* odbcConnStr, const char* serverIP, uint16 serverPort,
 		DWORD numOfIocpConcurrentThrd, uint16 numOfWorkerThreads,
 		uint16 maxOfConnections
 		)
@@ -49,24 +57,8 @@ public:
 		m_DBConnTlsIdx = TlsAlloc();
 	}
 
-	bool Start() {
-		if (!CLanOdbcServer::Start(ODBC_CONNECTION_STRING)) {
-			DebugBreak();
-			return false;
-		}
-
-		// Redis 커넥션
-		if (!m_RedisConn.connect("127.0.0.1", 6379)) {
-			std::cout << "redis connect error " << m_RedisConn.getErrorStr() << std::endl;
-			DebugBreak();
-			return false;
-		}
-
-		return true;
-	}
-	void Stop() {
-
-	}
+	bool Start();
+	void Stop();
 
 private:
 	// 타임아웃 체커 스레드
@@ -74,11 +66,13 @@ private:
 
 	virtual bool OnWorkerThreadCreate(HANDLE thHnd) override;
 	virtual void OnWorkerThreadStart() override;
-	virtual bool OnConnectionRequest(/*IP, Port*/) override;
+	virtual bool OnConnectionRequest(/*IP, Port*/) override { return true; }
 	// 로그인 서버 접속 클라이언트 연결
 	virtual void OnClientJoin(UINT64 sesionID) override;
+	virtual void OnClientLeave(UINT64 sessionID) override {}
 	// 로그인 서버 연결 -> 로그인 요청 패킷 전송 (OnClientJoin부터 최초 OnRecv까지의 타임 아웃 발동 필요)
 	virtual void OnRecv(UINT64 sessionID, JBuffer& recvBuff);
+	virtual void OnError() override {}
 
 	// 메시지 처리
 	void Proc_LOGIN_REQ(UINT64, stMSG_LOGIN_REQ);

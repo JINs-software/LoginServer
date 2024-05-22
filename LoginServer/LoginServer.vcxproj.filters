@@ -8,5 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="LoginServer.cpp" />
+    <ClCompile Include="Main.cpp" />
   </ItemGroup>
 </Project>

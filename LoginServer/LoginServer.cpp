@@ -1,6 +1,31 @@
 #include "LoginServer.h"
 #include "LoginServerConfig.h"
 
+#include "CRedisConn.h"
+
+bool LoginServer::Start() {
+	if (!CLanOdbcServer::Start()) {
+		DebugBreak();
+		return false;
+	}
+
+	// Redis 커넥션
+	m_RedisConn = new RedisCpp::CRedisConn();	// 형식 지정자가 필요합니다.
+
+	if (!m_RedisConn->connect("127.0.0.1", 6379)) {
+		std::cout << "redis connect error " << m_RedisConn->getErrorStr() << std::endl;
+		DebugBreak();
+		return false;
+	}
+
+	return true;
+}
+void LoginServer::Stop() {
+	m_RedisConn->disConnect();
+
+	CLanOdbcServer::Stop();
+}
+
 UINT __stdcall LoginServer::TimeOutCheckThreadFunc(void* arg)
 {
 	LoginServer* server = (LoginServer*)arg;
@@ -229,5 +254,5 @@ void LoginServer::InsertSessionKeyToRedis(INT64 accountNo, const char* sessionKe
 	std::string accountNoStr = to_string(accountNo);
 	std::string sessionKeyStr(sessionKey);
 	uint32 retval;
-	m_RedisConn.set(accountNoStr, sessionKeyStr, retval);
+	m_RedisConn->set(accountNoStr, sessionKeyStr, retval);
 }
