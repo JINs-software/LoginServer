@@ -60,12 +60,16 @@ public:
 	bool Start();
 	void Stop();
 
-private:
+protected:
 	// 타임아웃 체커 스레드
 	static UINT __stdcall TimeOutCheckThreadFunc(void* arg);
 
-	virtual bool OnWorkerThreadCreate(HANDLE thHnd) override;
+	// 개별 IOCP 작업자 스레드의 초기 설정 수행: 부모 클래스(CLanOdbcServer)가 관리하는 DBConnectionPool로 부터 단일 DB 커넥션을 획득
+	// (DBConnectionPool이 관리하는 커넥션은 CLanOdbcServer 생성자에서 생성 및 연결됨)
 	virtual void OnWorkerThreadStart() override;
+	// 개별 IOCP 작업자 스레드의 종료(스레드 수행 함수로부터 return) 전 DBConnectionPool에 스레드 개별로 획득하였던 커넥션 반환
+	virtual void OnWorkerThreadEnd() override;
+
 	virtual bool OnConnectionRequest(/*IP, Port*/) override { return true; }
 	// 로그인 서버 접속 클라이언트 연결
 	virtual void OnClientJoin(UINT64 sesionID) override;

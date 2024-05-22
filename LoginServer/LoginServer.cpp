@@ -62,11 +62,6 @@ UINT __stdcall LoginServer::TimeOutCheckThreadFunc(void* arg)
 
 }
 
-bool LoginServer::OnWorkerThreadCreate(HANDLE thHnd)
-{
-	return true;
-}
-
 void LoginServer::OnWorkerThreadStart()
 {
 	if (TlsGetValue(m_DBConnTlsIdx) == NULL) {
@@ -82,6 +77,12 @@ void LoginServer::OnWorkerThreadStart()
 	else {
 		DebugBreak();
 	}
+}
+
+void LoginServer::OnWorkerThreadEnd()
+{
+	DBConnection* dbConn = (DBConnection*)TlsGetValue(m_DBConnTlsIdx);
+	FreeDBConnection(dbConn);
 }
 
 void LoginServer::OnClientJoin(UINT64 sesionID)
