@@ -1,5 +1,6 @@
 #include "LoginServer.h"
 #include "LoginServerConfig.h"
+#include "CommonProtocol.h"
 
 #include "CRedisConn.h"
 
@@ -14,6 +15,12 @@ bool LoginServer::Start() {
 
 	if (!m_RedisConn->connect("127.0.0.1", 6379)) {
 		std::cout << "redis connect error " << m_RedisConn->getErrorStr() << std::endl;
+		DebugBreak();
+		return false;
+	}
+
+	if (!m_RedisConn->ping()) {
+		std::cout << "redis ping returns false " << m_RedisConn->getErrorStr() << std::endl;
 		DebugBreak();
 		return false;
 	}
@@ -98,10 +105,22 @@ void LoginServer::OnRecv(UINT64 sessionID, JBuffer& recvBuff)
 	while (recvBuff.GetUseSize() >= sizeof(stMSG_HDR)) {
 		stMSG_HDR msgHdr;
 		recvBuff.Peek(&msgHdr);
-
+		if (msgHdr.code != dfPACKET_CODE) {
+			// 코드 불일치
+			// 연결 강제 종료!
+			DebugBreak();
+			break;
+		}
 		if (recvBuff.GetUseSize() < sizeof(stMSG_HDR) + msgHdr.len) {
 			// 메시지 미완성
+			DebugBreak();
 			break;
+		}
+
+		recvBuff >> msgHdr;
+		if (!Decode(msgHdr.randKey, msgHdr.len, msgHdr.checkSum, recvBuff.GetDequeueBufferPtr())) {
+			DebugBreak();
+			// 연결 강제 종료?
 		}
 
 		UINT dequeueSize = 0;
@@ -109,29 +128,33 @@ void LoginServer::OnRecv(UINT64 sessionID, JBuffer& recvBuff)
 			WORD type;
 			recvBuff.Peek(&type);
 
-			switch (type)
-			{
-			case en_PACKET_CS_LOGIN_REQ:
-			{
+			if (type == en_PACKET_CS_LOGIN_REQ_LOGIN) {
 				// 로그인 요청 처리
 				stMSG_LOGIN_REQ message;
 				recvBuff.Dequeue((BYTE*)&message, sizeof(stMSG_LOGIN_REQ));
 				dequeueSize += sizeof(stMSG_LOGIN_REQ);
-
-				Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
-												// 2. 토큰 생성
-			}									// 3. Memory DB에 토큰 삽입
-												// 4. 클라이언트에 토큰 송신
-			break;
-			case en_PACKET_CS_GET_TOKEN:
-			{
 				
+				Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
 			}
-			break;
-			default:
-				DebugBreak();
-				break;
-			}
+
+			//switch (type)
+			//{
+			//case (WORD)en_PACKET_CS_LOGIN_SERVER:
+			//{
+			//	// 로그인 요청 처리
+			//	stMSG_LOGIN_REQ message;
+			//	recvBuff.Dequeue((BYTE*)&message, sizeof(stMSG_LOGIN_REQ));
+			//	dequeueSize += sizeof(stMSG_LOGIN_REQ);
+			//
+			//	Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
+			//									// 2. 토큰 생성
+			//}									// 3. Memory DB에 토큰 삽입
+			//									// 4. 클라이언트에 토큰 송신
+			//break;
+			//default:
+			//	DebugBreak();
+			//	break;
+			//}
 		}
 	}
 }
@@ -162,6 +185,7 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 	}
 
 	// 1. DB 조회
+
 	if (!CheckSessionKey(message.AccountNo, message.SessionKey)) {
 		//	실패 시 세션 연결 종료
 		
@@ -173,33 +197,70 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 		}
 		else {
 			// 3. Redis에 토큰 삽입
-			InsertSessionKeyToRedis(message.AccountNo, message.SessionKey);
+			//InsertSessionKeyToRedis(message.AccountNo, message.SessionKey);
+			// 더미 테스트
+			InsertSessionKeyToRedis(message.AccountNo, "0");
 		}
 	}
 
 
 	// 3. 클라이언트에 토큰 전송 (WSASend)
-	Proc_LOGIN_RES(sessionID, status, resMessage);
+	Proc_LOGIN_RES(sessionID, resMessage.AccountNo, resMessage.Status, resMessage.ID, resMessage.Nickname, L"127.0.0.1", 0, L"127.0.0.1", 12001);
 }
 
-void LoginServer::Proc_LOGIN_RES(UINT64 sessionID, BYTE status, stMSG_LOGIN_RES resMessage)
+void LoginServer::Proc_LOGIN_RES(UINT64 sessionID, INT64 accountNo, BYTE status, const WCHAR* id, const WCHAR* nickName, const WCHAR* gameserverIP, USHORT gameserverPort, const WCHAR* chatserverIP, USHORT chatserverPort)
 {
 	// 로그인 응답 메시지 전송
+	//std::cout << "[Send_RES_SECTOR_MOVE] sessionID: " << sessionID << ", accountNo: " << AccountNo << std::endl;
+	// Unicast Reply
+	JBuffer* sendMessage = m_SerialBuffPoolMgr.GetTlsMemPool().AllocMem(1);
+	sendMessage->ClearBuffer();
+
+	stMSG_HDR* hdr = sendMessage->DirectReserve<stMSG_HDR>();
+	hdr->code = dfPACKET_CODE;
+	hdr->len = sizeof(stMSG_LOGIN_RES);
+	hdr->randKey = (BYTE)rand();
+
+	(*sendMessage) << (WORD)en_PACKET_CS_LOGIN_RES_LOGIN << accountNo << status;
+	sendMessage->Enqueue((BYTE*)id, sizeof(WCHAR[20]));
+	sendMessage->Enqueue((BYTE*)nickName, sizeof(WCHAR[20]));
+	sendMessage->Enqueue((BYTE*)gameserverIP, sizeof(WCHAR[16]));
+	(*sendMessage) << gameserverPort;
+	sendMessage->Enqueue((BYTE*)chatserverIP, sizeof(WCHAR[16]));
+	(*sendMessage) << chatserverPort;
+
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, sendMessage->GetBufferPtr(sizeof(stMSG_HDR)));
+
+	//SendPacket(sessionID, sendMessage);
+	if (!SendPacket(sessionID, sendMessage)) {
+		m_SerialBuffPoolMgr.GetTlsMemPool().FreeMem(sendMessage);
+	}
 }
 
 bool LoginServer::CheckSessionKey(INT64 accountNo, const char* sessionKey)
 {
 	DBConnection* dbConn = (DBConnection*)TlsGetValue(m_DBConnTlsIdx);
 
-	// 세션 키를 확인하는 SQL 쿼리
-	const WCHAR* query = L"SELECT accountno FROM accountdb.sessionkey WHERE accountno = ? AND sessionkey = ?";
+	//// 세션 키를 확인하는 SQL 쿼리
+	//const WCHAR* query = L"SELECT accountno FROM accountdb.sessionkey WHERE accountno = ? AND sessionkey = ?";
+	//SQLLEN sqlLen = 0;
+	//
+	//// 이전 바인딩 해제
+	//dbConn->Unbind();
+	//// 첫 번째 파라미터로 계정 번호 바인딩
+	//dbConn->BindParam(1, SQL_C_SBIGINT, SQL_BIGINT, sizeof(accountNo), &accountNo, &sqlLen);
+	//// 두 번째 파라미터로 세션 키 바인딩
+	//dbConn->BindParam(2, SQL_C_CHAR, SQL_CHAR, 64, (SQLPOINTER)sessionKey, &sqlLen);
+	
+	// 더미 테스트
+	const WCHAR* query = L"SELECT accountno FROM accountdb.sessionkey WHERE accountno = ? AND sessionkey IS NULL";
+	SQLLEN sqlLen = 0;
 
 	// 이전 바인딩 해제
 	dbConn->Unbind();
 	// 첫 번째 파라미터로 계정 번호 바인딩
-	dbConn->BindParam(1, SQL_C_SBIGINT, SQL_BIGINT, 0, &accountNo, NULL);
-	// 두 번째 파라미터로 세션 키 바인딩
-	dbConn->BindParam(2, SQL_C_CHAR, SQL_CHAR, 64, (SQLPOINTER)sessionKey, NULL);
+	dbConn->BindParam(1, SQL_C_SBIGINT, SQL_BIGINT, sizeof(accountNo), &accountNo, &sqlLen);
+
 	// 쿼리 실행
 	dbConn->Execute(query);
 
@@ -235,7 +296,10 @@ bool LoginServer::GetAccountInfo(INT64 accountNo, stMSG_LOGIN_RES& resMessage)
 	// 결과를 페치하고 응답 구조체에 값 설정
 	if (dbConn->Fetch()) {
 		resMessage.AccountNo = accountNo;
-		resMessage.Status = static_cast<BYTE>(status);
+
+		//resMessage.Status = static_cast<BYTE>(status);	// 더미 테스트
+		resMessage.Status = static_cast<BYTE>(dfLOGIN_STATUS_OK);
+
 		mbstowcs(resMessage.ID, (char*)userid, 20);
 		mbstowcs(resMessage.Nickname, (char*)usernick, 20);
 		// GameServerIP, GameServerPort, ChatServerIP, ChatServerPort 설정

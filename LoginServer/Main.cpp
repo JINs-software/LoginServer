@@ -2,7 +2,7 @@
 #include <conio.h>
 
 int main() {
-	LoginServer* loginserver = new LoginServer(10, (WCHAR*)ODBC_CONNECTION_STRING, NULL, 300, 0, 10, 1000);
+	LoginServer* loginserver = new LoginServer(10, (WCHAR*)ODBC_CONNECTION_STRING, NULL, 30000, 0, 10, 1000);
 
 	if (!loginserver->Start()) {
 		std::cout << "loginserver->Start() Fail!" << std::endl;

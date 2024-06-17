@@ -1,22 +1,23 @@
 #pragma once
 
-enum enPACKET_ENUM {
-	en_PACKET_CS_LOGIN_REQ,
-	en_PACKET_SC_LOGIN_RES,
-	en_PACKET_CS_GET_TOKEN
-};
-
-struct  stMSG_HDR
-{
-	unsigned short len;
+#pragma pack(push, 1)
+struct stMSG_HDR {
+	BYTE	code;
+	USHORT	len;
+	BYTE	randKey;
+	BYTE	checkSum;
 };
 struct stMSG_LOGIN_REQ
 {
+	WORD	Type;
+
 	INT64	AccountNo;
 	char	SessionKey[64];
 };
 struct stMSG_LOGIN_RES
 {
+	WORD	Type;
+	
 	INT64	AccountNo;
 	BYTE	Status;				// 0 (세션오류) / 1 (성공) ...  하단 defines 사용
 	
@@ -28,3 +29,4 @@ struct stMSG_LOGIN_RES
 	WCHAR	ChatServerIP[16];
 	USHORT	ChatServerPort;
 };
+#pragma pack(pop)

@@ -80,7 +80,7 @@ protected:
 
 	// 메시지 처리
 	void Proc_LOGIN_REQ(UINT64, stMSG_LOGIN_REQ);
-	void Proc_LOGIN_RES(UINT64, BYTE, stMSG_LOGIN_RES);
+	void Proc_LOGIN_RES(UINT64, INT64 accountNo, BYTE status, const WCHAR* id, const WCHAR* nickName, const WCHAR* gameserverIP, USHORT gameserverPort, const WCHAR* chatserverIP, USHORT chatserverPort);
 
 
 	// DB 접근
