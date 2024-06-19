@@ -71,11 +71,11 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ExternalIncludePath>$(SolutionDir)..\..\0. Utility\0. ServerNetwork\include;$(SolutionDir)..\..\0. Utility\2. RingBuffer\include;$(SolutionDir)..\..\0. Utility\MemoryPool\include;$(SolutionDir)..\..\0. Utility\CLanLibrary\include;$(SolutionDir)..\..\0. Utility\CLanDbConnServer\include;$(SolutionDir)\Redis\hiredis;$(SolutionDir)\Redis\RedisCpp-hiredis\src;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)..\..\0. Utility\ServerNetwork\include;$(SolutionDir)..\..\0. Utility\RingBuffer\include;$(SolutionDir)..\..\0. Utility\MemoryPool\include;$(SolutionDir)..\..\0. Utility\CLanLibrary\include;$(SolutionDir)..\..\0. Utility\CLanDbConnServer\include;$(SolutionDir)\Redis\hiredis;$(SolutionDir)\Redis\RedisCpp-hiredis\src;$(ExternalIncludePath)</ExternalIncludePath>
     <LibraryPath>$(SolutionDir)\Redis\hiredis\build\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <ExternalIncludePath>$(SolutionDir)..\..\0. Utility\0. ServerNetwork\include;$(SolutionDir)..\..\0. Utility\2. RingBuffer\include;$(SolutionDir)..\..\0. Utility\MemoryPool\include;$(SolutionDir)..\..\0. Utility\CLanLibrary\include;$(SolutionDir)..\..\0. Utility\CLanDbConnServer\include;$(SolutionDir)\Redis\hiredis;$(SolutionDir)\Redis\RedisCpp-hiredis\src;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)..\..\0. Utility\ServerNetwork\include;$(SolutionDir)..\..\0. Utility\RingBuffer\include;$(SolutionDir)..\..\0. Utility\MemoryPool\include;$(SolutionDir)..\..\0. Utility\LockFree\include;$(SolutionDir)..\..\0. Utility\CLanLibrary\include;$(SolutionDir)..\..\0. Utility\CLanDbConnServer\include;$(SolutionDir)\Redis\hiredis;$(SolutionDir)\Redis\RedisCpp-hiredis\src;$(ExternalIncludePath)</ExternalIncludePath>
     <LibraryPath>$(SolutionDir)\Redis\hiredis\build\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -134,7 +134,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(SolutionDir)..\..\0. Utility\0. ServerNetwork\lib\$(Configuration)\NetworkCore.lib;$(SolutionDir)..\..\0. Utility\2. RingBuffer\lib\$(Configuration)\RingBuffer.lib;$(SolutionDir)..\..\0. Utility\CLanLibrary\lib\$(Configuration)\CLanServer.lib;$(SolutionDir)..\..\0. Utility\CLanDbConnServer\lib\$(Configuration)\CLanOdbcServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)..\..\0. Utility\ServerNetwork\lib\$(Configuration)\NetworkCore.lib;$(SolutionDir)..\..\0. Utility\RingBuffer\lib\$(Configuration)\RingBuffer.lib;$(SolutionDir)..\..\0. Utility\CLanLibrary\lib\$(Configuration)\CLanServer.lib;$(SolutionDir)..\..\0. Utility\CLanLibrary\lib\$(Configuration)\CLanOdbcServer.lib;$(SolutionDir)..\..\0. Utility\LockFree\lib\$(Configuration)\LockFreeMemoryPool.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

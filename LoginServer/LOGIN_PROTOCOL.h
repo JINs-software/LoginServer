@@ -1,12 +1,6 @@
 #pragma once
 
 #pragma pack(push, 1)
-struct stMSG_HDR {
-	BYTE	code;
-	USHORT	len;
-	BYTE	randKey;
-	BYTE	checkSum;
-};
 struct stMSG_LOGIN_REQ
 {
 	WORD	Type;

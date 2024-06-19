@@ -7,6 +7,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LoginServer", "LoginServer\
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RedisTest", "RedisTest\RedisTest.vcxproj", "{CC7E8C93-11D0-466E-80FC-D4E419F1611D}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CLanOdbcServer", "..\..\0. Utility\CLanLibrary\CLanOdbcServer\CLanOdbcServer.vcxproj", "{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CLanServer", "..\..\0. Utility\CLanLibrary\CLanServer\CLanServer.vcxproj", "{95104AF0-56A3-4997-A99B-4473F0A0A357}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -31,6 +35,22 @@ Global
 		{CC7E8C93-11D0-466E-80FC-D4E419F1611D}.Release|x64.Build.0 = Release|x64
 		{CC7E8C93-11D0-466E-80FC-D4E419F1611D}.Release|x86.ActiveCfg = Release|Win32
 		{CC7E8C93-11D0-466E-80FC-D4E419F1611D}.Release|x86.Build.0 = Release|Win32
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Debug|x64.ActiveCfg = Debug|x64
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Debug|x64.Build.0 = Debug|x64
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Debug|x86.ActiveCfg = Debug|Win32
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Debug|x86.Build.0 = Debug|Win32
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Release|x64.ActiveCfg = Release|x64
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Release|x64.Build.0 = Release|x64
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Release|x86.ActiveCfg = Release|Win32
+		{EEDDAA3A-D4FD-42F5-B4DD-A445D2D789AE}.Release|x86.Build.0 = Release|Win32
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Debug|x64.ActiveCfg = Debug|x64
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Debug|x64.Build.0 = Debug|x64
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Debug|x86.ActiveCfg = Debug|Win32
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Debug|x86.Build.0 = Debug|Win32
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Release|x64.ActiveCfg = Release|x64
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Release|x64.Build.0 = Release|x64
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Release|x86.ActiveCfg = Release|Win32
+		{95104AF0-56A3-4997-A99B-4473F0A0A357}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
