@@ -120,7 +120,13 @@ public:
 		timeoutVal.tv_sec = _timeout;
 		timeoutVal.tv_usec = 0;
 
-		_redCtx = redisConnectWithTimeout(_host.c_str(), _port, timeoutVal);
+		if (timeoutVal.tv_sec == 0 && timeoutVal.tv_usec == 0) {
+			_redCtx = redisConnect(_host.c_str(), _port);
+		}
+		else {
+			_redCtx = redisConnectWithTimeout(_host.c_str(), _port, timeoutVal);
+		}
+
 		if (_getError(_redCtx))
 		{
 			if (NULL != _redCtx)
