@@ -75,8 +75,8 @@
     <LibraryPath>$(SolutionDir)\Redis\hiredis\build\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <ExternalIncludePath>$(SolutionDir)..\..\0. Utility\ServerNetwork\include;$(SolutionDir)..\..\0. Utility\RingBuffer\include;$(SolutionDir)..\..\0. Utility\MemoryPool\include;$(SolutionDir)..\..\0. Utility\LockFree\include;$(SolutionDir)..\..\0. Utility\CLanLibrary\include;$(SolutionDir)..\..\0. Utility\CLanDbConnServer\include;$(SolutionDir)\Redis\hiredis;$(SolutionDir)\Redis\RedisCpp-hiredis\src;$(ExternalIncludePath)</ExternalIncludePath>
-    <LibraryPath>$(SolutionDir)\Redis\hiredis\build\$(Configuration);$(LibraryPath)</LibraryPath>
+    <ExternalIncludePath>$(SolutionDir)..\..\0. Utility\RingBuffer\include;$(SolutionDir)..\..\0. Utility\MemoryPool\include;$(SolutionDir)..\..\0. Utility\LockFree\include;$(SolutionDir)..\..\0. Utility\CLanLibrary\include;$(SolutionDir)..\..\0. Utility\PerformanceCounter\include;$(SolutionDir)..\..\0. Utility\CLanLibrary\Redis\hiredis;$(SolutionDir)..\..\0. Utility\CLanLibrary\Redis\RedisCpp-hiredis\src;$(ExternalIncludePath)</ExternalIncludePath>
+    <LibraryPath>$(SolutionDir)..\..\0. Utility\CLanLibrary\Redis\hiredis\build\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -112,6 +112,7 @@
       <SDLCheck>false</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -128,20 +129,20 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <Optimization>Disabled</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(SolutionDir)..\..\0. Utility\ServerNetwork\lib\$(Configuration)\NetworkCore.lib;$(SolutionDir)..\..\0. Utility\RingBuffer\lib\$(Configuration)\RingBuffer.lib;$(SolutionDir)..\..\0. Utility\CLanLibrary\lib\$(Configuration)\CLanServer.lib;$(SolutionDir)..\..\0. Utility\CLanLibrary\lib\$(Configuration)\CLanOdbcServer.lib;$(SolutionDir)..\..\0. Utility\LockFree\lib\$(Configuration)\LockFreeMemoryPool.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)..\..\0. Utility\RingBuffer\lib\$(Configuration)\RingBuffer.lib;$(SolutionDir)..\..\0. Utility\CLanLibrary\lib\$(Configuration)\CLanOdbcServer.lib;$(SolutionDir)..\..\0. Utility\CLanLibrary\lib\$(Configuration)\JClient.lib;$(SolutionDir)..\..\0. Utility\LockFree\lib\$(Configuration)\LockFreeMemoryPool.lib;$(SolutionDir)..\..\0. Utility\PerformanceCounter\lib\$(Configuration)\PerformanceCounter.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="CommonProtocol.h" />
     <ClInclude Include="LoginServer.h" />
     <ClInclude Include="LoginServerConfig.h" />
-    <ClInclude Include="LOGIN_PROTOCOL.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="LoginServer.cpp" />

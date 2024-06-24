@@ -1,46 +1,304 @@
 #include "LoginServer.h"
-#include "LoginServerConfig.h"
-#include "CommonProtocol.h"
-
 #include "CRedisConn.h"
 
 bool LoginServer::Start() {
-	if (!CLanOdbcServer::Start()) {
-		DebugBreak();
-		return false;
-	}
-
 	// Redis 커넥션
-	m_RedisConn = new RedisCpp::CRedisConn();	// 형식 지정자가 필요합니다.
-	if (m_RedisConn == NULL) {
+	bool firstConn = true;
+	for (uint16 i = 0; i < m_NumOfIOCPWorkers; i++) {
+		RedisCpp::CRedisConn* redisConn = new RedisCpp::CRedisConn();	// 형식 지정자가 필요합니다.
+		if (redisConn == NULL) {
+			std::cout << "[LoginServer::Start] new RedisCpp::CRedisConn() return NULL" << std::endl;
+			return false;
+		}
+
+		if (!redisConn->connect(REDIS_TOKEN_SERVER_IP, REDIS_TOKEN_SERVER_PORT)) {
+			std::cout << "[LoginServer::Start] m_RedisConn->connect(..) return NULL" << std::endl;
+			return false;
+		}
+
+		if (!redisConn->ping()) {
+			std::cout << "[LoginServer::Start] m_RedisConn->ping() return NULL" << std::endl;
+			return false;
+		}
+
+		if (firstConn) {
+			uint32 ret;
+			redisConn->flushall(ret);
+			firstConn = false;
+		}
+		m_RedisConnPool.Enqueue(redisConn);
+	}
+
+	if (!CLanOdbcServer::Start()) {
+		std::cout << "[LoginServer::Start] CLanOdbcServer::Start() return NULL" << std::endl;
 		return false;
 	}
 
-	if (!m_RedisConn->connect(REDIS_TOKEN_SERVER_IP, REDIS_TOKEN_SERVER_PORT)) {
-		std::cout << "redis connect error " << m_RedisConn->getErrorStr() << std::endl;
-		DebugBreak();
-		return false;
-	}
 
-	if (!m_RedisConn->ping()) {
-		std::cout << "redis ping returns false " << m_RedisConn->getErrorStr() << std::endl;
-		DebugBreak();
+#if defined(CONNECT_TO_MONITORING_SERVER)
+	m_ServerMont = new LoginServerMont(GetTlsMemPoolManager(), m_SerialBufferSize, MONT_SERVER_PROTOCOL_CODE, MONT_SERVER_PACKET_KEY);
+	if (m_ServerMont == NULL) {
+		std::cout << "[LoginServer::Start] new LoginServerMont() return NULL" << std::endl;
 		return false;
 	}
+	m_ServerMont->Start();
+#endif
+
+	m_ServerStart = true;
 
 	return true;
 }
 void LoginServer::Stop() {
-	if (m_DBConn != NULL) {
-		FreeDBConnection(m_DBConn);
-	}
-	if (m_RedisConn != NULL) {
-		m_RedisConn->disConnect();
-	}
+	if (m_ServerStart) {
+		CLanOdbcServer::Stop();
 
-	CLanOdbcServer::Stop();
+		while (m_RedisConnPool.GetSize() > 0) {
+			RedisCpp::CRedisConn* redisConn = NULL;
+			m_RedisConnPool.Dequeue(redisConn);
+			if (redisConn != NULL) {
+				delete redisConn;
+			}
+		}
+	}
 }
 
+void LoginServer::OnClientJoin(UINT64 sesionID)
+{
+#if defined(CONNECT_TIMEOUT_CHECK_SET)
+	// 접속 현황 맵에 삽입
+	AcquireSRWLockExclusive(&m_ConnectionMapSrwLock);
+	m_ConnectionMap.insert({ sesionID, time(NULL) });
+	ReleaseSRWLockExclusive(&m_ConnectionMapSrwLock);
+#endif
+
+#if defined(CONNECT_TO_MONITORING_SERVER)
+	m_ServerMont->IncrementSessionCount();
+#endif
+}
+
+void LoginServer::OnClientLeave(UINT64 sessionID)
+{
+#if defined(CONNECT_TO_MONITORING_SERVER)
+	m_ServerMont->DecrementSessionCount();
+#endif
+}
+
+void LoginServer::OnRecv(UINT64 sessionID, JBuffer& recvBuff)
+{	
+	while (recvBuff.GetUseSize() >= sizeof(WORD)) {		
+		WORD type;
+		recvBuff.Peek(&type);
+
+		if (type == en_PACKET_CS_LOGIN_REQ_LOGIN) {
+			// 로그인 요청 처리
+			stMSG_LOGIN_REQ message;
+			recvBuff >> message;
+			
+			Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
+		}
+	}
+}
+
+void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
+{
+#if defined(CONNECT_TIMEOUT_CHECK_SET)
+	// 1. 접속 및 타입아웃 확인
+	{
+		std::lock_guard<std::mutex> lockGuard(m_LoginProcMtx);
+
+		// 타임아웃 체크
+		auto iter = m_TimeOutSet.find(sessionID);
+		if (iter != m_TimeOutSet.end()) {
+			m_TimeOutSet.erase(iter);
+			return;
+		}
+
+		// 로그인 메시지 수신 확인
+		m_LoginPacketRecvedSet.insert(sessionID);
+	}
+#endif
+	stMSG_LOGIN_RES resMessage;
+	memset(&resMessage, 0, sizeof(resMessage));
+	resMessage.AccountNo = message.AccountNo;
+	resMessage.Status = dfLOGIN_STATUS_OK;
+
+	// 2. DB 조회
+	if (!CheckSessionKey(message.AccountNo, message.SessionKey)) {
+		//	실패 시 세션 연결 종료
+		std::cout << "CheckSessionKey Fail..." << std::endl;
+		resMessage.Status = dfLOGIN_STATUS_FAIL;
+		InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+	}
+	else {
+		//std::cout << "CheckSessionKey Success!!!" << std::endl;
+
+		// 3. Account 정보 획득(stMSG_LOGIN_RES 메시지 활용)
+		if (!GetAccountInfo(message.AccountNo, resMessage.ID, resMessage.Nickname, resMessage.GameServerIP, resMessage.GameServerPort, resMessage.ChatServerIP, resMessage.ChatServerPort)) {
+			//	실패 시 세션 연결 종료
+			std::cout << "GetAccountInfo Fail..." << std::endl;
+			resMessage.Status = dfLOGIN_STATUS_FAIL;
+			InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+		}
+		else {
+			//std::cout << "GetAccountInfo Success!!!" << std::endl;
+			// 
+			// 3. Redis에 토큰 삽입
+			if (!InsertSessionKeyToRedis(message.AccountNo, message.SessionKey)) {
+				std::cout << "InsertSessionKeyToRedis Fail..." << std::endl;
+				resMessage.Status = dfLOGIN_STATUS_FAIL;
+				InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+			}
+		}
+	}
+	
+	
+	// 4. 클라이언트에 토큰 전송 (WSASend)
+	Proc_LOGIN_RES(sessionID, resMessage.AccountNo, resMessage.Status, resMessage.ID, resMessage.Nickname, resMessage.GameServerIP, resMessage.GameServerPort, resMessage.ChatServerIP, resMessage.ChatServerPort);
+}
+
+void LoginServer::Proc_LOGIN_RES(UINT64 sessionID, INT64 accountNo, BYTE status, const WCHAR* id, const WCHAR* nickName, const WCHAR* gameserverIP, USHORT gameserverPort, const WCHAR* chatserverIP, USHORT chatserverPort)
+{
+	// 로그인 응답 메시지 전송
+	//std::cout << "[Send_RES_SECTOR_MOVE] sessionID: " << sessionID << ", accountNo: " << AccountNo << std::endl;
+	// Unicast Reply
+	JBuffer* sendMessage = AllocSerialSendBuff(sizeof(WORD) + sizeof(INT64) + sizeof(BYTE) + sizeof(WCHAR[20]) + sizeof(WCHAR[20]) + sizeof(WCHAR[16]) + sizeof(USHORT) + sizeof(WCHAR[16]) + sizeof(USHORT));
+
+	(*sendMessage) << (WORD)en_PACKET_CS_LOGIN_RES_LOGIN << accountNo << status;
+	sendMessage->Enqueue((BYTE*)id, sizeof(WCHAR[20]));
+	sendMessage->Enqueue((BYTE*)nickName, sizeof(WCHAR[20]));
+	sendMessage->Enqueue((BYTE*)gameserverIP, sizeof(WCHAR[16]));
+	(*sendMessage) << gameserverPort;
+	sendMessage->Enqueue((BYTE*)chatserverIP, sizeof(WCHAR[16]));
+	(*sendMessage) << chatserverPort;
+
+	//SendPacket(sessionID, sendMessage);
+	if (!SendPacket(sessionID, sendMessage)) {
+		m_SerialBuffPoolMgr.GetTlsMemPool().FreeMem(sendMessage);
+	}
+
+#if defined(CONNECT_TO_MONITORING_SERVER)
+	m_ServerMont->IncrementAuthTransaction();
+#endif
+	InterlockedIncrement64((int64*)&m_TotalLoginCnt);
+}
+
+bool LoginServer::CheckSessionKey(INT64 accountNo, const char* sessionKey)
+{
+	bool ret;
+
+	// 더미 테스트
+	const WCHAR* query = L"SELECT accountno FROM accountdb.sessionkey WHERE accountno = ? AND sessionkey IS NULL";
+	SQLLEN sqlLen = 0;
+
+	DBConnection* dbConn;
+	while ((dbConn = HoldDBConnection()) == NULL);	// DBConnection 획득까지 polling
+
+	// 이전 바인딩 해제
+	UnBind(dbConn);
+
+	// 첫 번째 파라미터로 계정 번호 바인딩
+	BindParameter(dbConn, 1, &accountNo);
+
+	// 쿼리 실행
+	ExecQuery(dbConn, query);
+
+	if (GetRowCount(dbConn) > 0) {
+		ret = true;
+	}
+	else {
+		ret = false;
+	}
+	FreeDBConnection(dbConn);
+
+	return ret;
+}
+
+bool LoginServer::GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname, WCHAR* gameserverIP, USHORT& gameserverPort, WCHAR* chatserverIP, USHORT& chatserverPort)
+{
+	bool ret;
+
+	// 계정 정보와 상태를 가져오는 SQL 쿼리
+	const WCHAR* query = L"SELECT a.userid, a.usernick, s.status FROM accountdb.account a JOIN accountdb.status s ON a.accountno = s.accountno WHERE a.accountno = ?";
+
+	DBConnection* dbConn;
+	while ((dbConn = HoldDBConnection()) == NULL);	// DBConnection 획득까지 polling
+
+	// 이전 바인딩 해제
+	UnBind(dbConn);
+	// 계정 번호를 파라미터로 바인딩
+	BindParameter(dbConn, 1, &accountNo);
+	// 쿼리 실행
+	dbConn->Execute(query);
+
+	// 결과를 저장할 변수들 선언
+	WCHAR userid[20];  // 사용자 ID
+	WCHAR usernick[20];  // 사용자 닉네임
+	int status;  // 상태
+
+	// 결과 열을 바인딩
+	//m_DBConn->BindCol(1, SQL_C_CHAR, sizeof(userid), userid, NULL);
+	//m_DBConn->BindCol(2, SQL_C_CHAR, sizeof(usernick), usernick, NULL);
+	//m_DBConn->BindCol(3, SQL_C_SLONG, sizeof(status), &status, NULL);
+	BindColumn(dbConn, 1, userid, sizeof(userid), NULL);
+	BindColumn(dbConn, 2, usernick, sizeof(usernick), NULL);
+	BindColumn(dbConn, 3, &status);
+
+	// 결과를 페치하고 응답 구조체에 값 설정
+	if (!dbConn->Fetch()) {
+		ret = false;
+	}
+	else {
+		ret = true;
+	}
+
+	FreeDBConnection(dbConn);
+
+	memcpy(ID, userid, sizeof(userid));
+	memcpy(Nickname, usernick, sizeof(usernick));
+	memcpy(gameserverIP, ECHO_GAME_SERVER_IP_WSTR, sizeof(WCHAR[16]));
+	gameserverPort = ECHO_GAME_SERVER_POPT;
+	memcpy(chatserverIP, CHATTING_SERVER_IP_WSTR, sizeof(WCHAR[16]));
+	chatserverPort = CHATTING_SERVER_POPT;
+
+	return ret;
+}
+
+bool LoginServer::InsertSessionKeyToRedis(INT64 accountNo, const char* sessionKey)
+{
+	bool ret;
+	std::string accountNoStr = to_string(accountNo);
+	std::string sessionKeyStr(sessionKey, sizeof(stMSG_LOGIN_REQ::SessionKey));
+
+	RedisCpp::CRedisConn* redisConn = NULL;
+	while (true) {	// redisConnect 획득까지 폴링
+		m_RedisConnPool.Dequeue(redisConn);
+		if (redisConn != NULL) {
+			break;
+		}
+	}
+	
+	uint32 retval;
+	if (!redisConn->set(accountNoStr, sessionKeyStr, retval)) {
+		ret = false;
+	}
+	else {
+		ret = true;
+	}
+
+	m_RedisConnPool.Enqueue(redisConn);
+	return ret;
+}
+
+void LoginServer::ServerConsoleLog() {
+				//================ SERVER CORE CONSOLE MONT ================
+	std::cout << "================       Login Server       ================" << std::endl;
+	std::cout << "[Login] Login Session Cnt          : " << m_ServerMont->GetNumOfLoginServerSessions() << std::endl;
+	std::cout << "[Login] Login Auth TPS             : " << m_ServerMont->GetLoginServerAuthTPS() << std::endl;
+	std::cout << "[Login] Login Total Logined Cnt    : " << m_TotalLoginCnt << std::endl;
+	std::cout << "[Login] Login Total Login Fail Cnt : " << m_TotalLoginFailCnt << std::endl;
+}
+
+#if defined(CONNECT_TIMEOUT_CHECK_SET)
 UINT __stdcall LoginServer::TimeOutCheckThreadFunc(void* arg)
 {
 	LoginServer* server = (LoginServer*)arg;
@@ -56,7 +314,7 @@ UINT __stdcall LoginServer::TimeOutCheckThreadFunc(void* arg)
 
 		AcquireSRWLockShared(&server->m_ConnectionMapSrwLock);
 		//for (const auto& conn : server->m_ConnectionMap) {
-		for(auto iter = server->m_ConnectionMap.begin(); iter != server->m_ConnectionMap.end();) {
+		for (auto iter = server->m_ConnectionMap.begin(); iter != server->m_ConnectionMap.end();) {
 			UINT64 sessionID = iter->first;
 			time_t connTime = iter->second;
 
@@ -85,194 +343,187 @@ UINT __stdcall LoginServer::TimeOutCheckThreadFunc(void* arg)
 			}
 			ReleaseSRWLockExclusive(&server->m_ConnectionMapSrwLock);
 		}
-		
+
 		Sleep(waitTime * 1000);
 	}
 }
+#endif
 
-void LoginServer::OnBeforeCreateThread()
+/*****************************************************************************************************
+* LoginServerMont
+*****************************************************************************************************/
+void LoginServerMont::OnClientNetworkThreadStart()
 {
-	m_DBConn = HoldDBConnection();
+	AllocTlsMemPool();
 }
 
-//void LoginServer::OnWorkerThreadStart()
-//{
-//	//m_DBConn = HoldDBConnection();
-//	//if (m_DBConn == nullptr) {
-//	//	DebugBreak();
-//	//}
-//	// => IOCP 작업자 스레드가 멀티일 경우 여러 개의 DB 커넥션을 소유한다.
-//}
-//
-//void LoginServer::OnWorkerThreadEnd()
-//{
-//	//if (m_DBConn != NULL) {
-//	//	FreeDBConnection(m_DBConn);
-//	//}
-//}
-
-void LoginServer::OnClientJoin(UINT64 sesionID)
+void LoginServerMont::OnServerConnected()
 {
-	// 접속 현황 맵에 삽입
-	AcquireSRWLockExclusive(&m_ConnectionMapSrwLock);
-	m_ConnectionMap.insert({ sesionID, time(NULL) });
-	ReleaseSRWLockExclusive(&m_ConnectionMapSrwLock);
-}
+	// 모니터링 서버에 접속 성공 시 로그인 요청 메시지 송신
+	JBuffer* loginMsg = AllocSerialSendBuff(sizeof(WORD) + sizeof(int), MONT_SERVER_PROTOCOL_CODE, GetRandomKey());
+	*loginMsg << (WORD)en_PACKET_SS_MONITOR_LOGIN;
+	*loginMsg << (int)dfSERVER_LOGIN_SERVER;
 
-void LoginServer::OnRecv(UINT64 sessionID, JBuffer& recvBuff)
-{	
-	while (recvBuff.GetUseSize() >= sizeof(WORD)) {		
-		WORD type;
-		recvBuff.Peek(&type);
+	stMSG_HDR* hdr = (stMSG_HDR*)loginMsg->GetBeginBufferPtr();
+	BYTE* payloads = loginMsg->GetBufferPtr(sizeof(stMSG_HDR));
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, payloads, MONT_SERVER_PACKET_KEY);
 
-		if (type == en_PACKET_CS_LOGIN_REQ_LOGIN) {
-			// 로그인 요청 처리
-			stMSG_LOGIN_REQ message;
-			recvBuff >> message;
-			
-			Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
-		}
-	}
-}
-
-void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
-{
-	// 1. 접속 및 타입아웃 확인
-	{
-		std::lock_guard<std::mutex> lockGuard(m_LoginProcMtx);
-
-		// 타임아웃 체크
-		auto iter = m_TimeOutSet.find(sessionID);
-		if (iter != m_TimeOutSet.end()) {
-			m_TimeOutSet.erase(iter);
-			return;
-		}
-
-		// 로그인 메시지 수신 확인
-		m_LoginPacketRecvedSet.insert(sessionID);
-	}
-
-	BYTE status;
-	stMSG_LOGIN_RES resMessage;
-	memset(&resMessage, 0, sizeof(resMessage));
-
-	// 2. DB 조회
-	if (!CheckSessionKey(message.AccountNo, message.SessionKey)) {
-		//	실패 시 세션 연결 종료
-		
-		return;
+	if (!SendPacketToServer(loginMsg)) {
+		FreeSerialBuff(loginMsg);
 	}
 	else {
-		// 2. Account 정보 획득(stMSG_LOGIN_RES 메시지 활용)
-		if (!GetAccountInfo(message.AccountNo, resMessage)) {
-			//	실패 시 세션 연결 종료
+		m_MontConnected = true;
+		m_MontConnectting = false;
+	}
+}
 
-			return;
+void LoginServerMont::OnServerLeaved()
+{
+	m_MontConnected = false;
+}
+
+void LoginServerMont::OnRecvFromServer(JBuffer& clientRecvRingBuffer)
+{
+	// 모니터링 서버로부터 수신 받을 패킷 x
+}
+
+void LoginServerMont::OnSerialSendBufferFree(JBuffer* serialBuff)
+{
+	FreeSerialBuff(serialBuff);
+}
+
+UINT __stdcall LoginServerMont::PerformanceCountFunc(void* arg)
+{
+	LoginServerMont* loginServerMont = (LoginServerMont*)arg;
+
+	loginServerMont->AllocTlsMemPool();
+
+	loginServerMont->m_PerfCounter = new PerformanceCounter();
+	loginServerMont->m_PerfCounter->SetCpuUsageCounter();
+	loginServerMont->m_PerfCounter->SetProcessCounter(dfMONITOR_DATA_TYPE_LOGIN_SERVER_MEM, dfQUERY_PROCESS_USER_VMEMORY_USAGE, L"LoginServer");
+	
+	clock_t timestamp = clock();
+	while (!loginServerMont->m_Stop) {
+		clock_t now = clock();
+		clock_t interval = now - timestamp;
+		if (interval >= CLOCKS_PER_SEC) {
+			loginServerMont->m_LoginServerAuthTPS = loginServerMont->m_LoginServerAuthTransaction / (interval / CLOCKS_PER_SEC);
+			loginServerMont->m_LoginServerAuthTransaction = 0;
+			timestamp = now;
 		}
+
+		if (loginServerMont->m_MontConnected) {
+			// Connected to Mont Server..
+			loginServerMont->SendCounterToMontServer();
+		}
+		else if(!loginServerMont->m_MontConnectting) {
+			// Disonnected to Mont Server..
+			if (loginServerMont->ConnectToServer(MONT_SERVER_IP, MONT_SERVER_PORT)) {
+				loginServerMont->m_MontConnectting = true;
+			}
+		}
+
+		Sleep(1000);
 	}
 
-	// 3. Redis에 토큰 삽입
-	//InsertSessionKeyToRedis(message.AccountNo, message.SessionKey);
-	// 더미 테스트
-	InsertSessionKeyToRedis(message.AccountNo, "0");
-	
-	
-	// 3. 클라이언트에 토큰 전송 (WSASend)
-	Proc_LOGIN_RES(sessionID, resMessage.AccountNo, resMessage.Status, resMessage.ID, resMessage.Nickname, resMessage.GameServerIP, resMessage.GameServerPort, resMessage.ChatServerIP, resMessage.ChatServerPort);
+	return 0;
 }
 
-void LoginServer::Proc_LOGIN_RES(UINT64 sessionID, INT64 accountNo, BYTE status, const WCHAR* id, const WCHAR* nickName, const WCHAR* gameserverIP, USHORT gameserverPort, const WCHAR* chatserverIP, USHORT chatserverPort)
+
+void LoginServerMont::SendCounterToMontServer()
 {
-	// 로그인 응답 메시지 전송
-	//std::cout << "[Send_RES_SECTOR_MOVE] sessionID: " << sessionID << ", accountNo: " << AccountNo << std::endl;
-	// Unicast Reply
-	JBuffer* sendMessage = AllocSerialSendBuff(sizeof(WORD) + sizeof(INT64) + sizeof(BYTE) + sizeof(WCHAR[20]) + sizeof(WCHAR[20]) + sizeof(WCHAR[16]) + sizeof(USHORT) + sizeof(WCHAR[16]) + sizeof(USHORT));
+	time_t now = time(NULL);
+	m_PerfCounter->ResetPerfCounterItems();
+	size_t allocMemPoolUnitCnt = GetAllocMemPoolUsageUnitCnt();
 
-	(*sendMessage) << (WORD)en_PACKET_CS_LOGIN_RES_LOGIN << accountNo << status;
-	sendMessage->Enqueue((BYTE*)id, sizeof(WCHAR[20]));
-	sendMessage->Enqueue((BYTE*)nickName, sizeof(WCHAR[20]));
-	sendMessage->Enqueue((BYTE*)gameserverIP, sizeof(WCHAR[16]));
-	(*sendMessage) << gameserverPort;
-	sendMessage->Enqueue((BYTE*)chatserverIP, sizeof(WCHAR[16]));
-	(*sendMessage) << chatserverPort;
+	JBuffer* perfMsg = AllocSerialBuff();
 
-	//SendPacket(sessionID, sendMessage);
-	if (!SendPacket(sessionID, sendMessage)) {
-		m_SerialBuffPoolMgr.GetTlsMemPool().FreeMem(sendMessage);
+	stMSG_HDR* hdr;
+	stMSG_MONITOR_DATA_UPDATE* body;
+
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
+	if (hdr == NULL) {
+		DebugBreak();
 	}
-}
+	hdr->code = MONT_SERVER_PROTOCOL_CODE;
+	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
+	hdr->randKey = GetRandomKey();
+	body = perfMsg->DirectReserve<stMSG_MONITOR_DATA_UPDATE>();
+	body->Type = en_PACKET_SS_MONITOR_DATA_UPDATE;
+	body->DataType = dfMONITOR_DATA_TYPE_LOGIN_SERVER_RUN;
+	body->DataValue = 1;
+	body->TimeStamp = now;
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-bool LoginServer::CheckSessionKey(INT64 accountNo, const char* sessionKey)
-{
-	// 더미 테스트
-	const WCHAR* query = L"SELECT accountno FROM accountdb.sessionkey WHERE accountno = ? AND sessionkey IS NULL";
-	SQLLEN sqlLen = 0;
-
-	// 이전 바인딩 해제
-	UnBind(m_DBConn);
-
-	// 첫 번째 파라미터로 계정 번호 바인딩
-	BindParameter(m_DBConn, 1, &accountNo);
-
-	// 쿼리 실행
-	ExecQuery(m_DBConn, query);
-
-	//FetchQuery(m_DBConn);
-	//// 결과를 페치하고 반환
-	//return FetchQuery(m_DBConn);
-
-	return GetRowCount(m_DBConn) > 0 ? true : false;
-}
-
-bool LoginServer::GetAccountInfo(INT64 accountNo, stMSG_LOGIN_RES& resMessage)
-{
-	// 계정 정보와 상태를 가져오는 SQL 쿼리
-	const WCHAR* query = L"SELECT a.userid, a.usernick, s.status FROM accountdb.account a JOIN accountdb.status s ON a.accountno = s.accountno WHERE a.accountno = ?";
-
-	// 이전 바인딩 해제
-	UnBind(m_DBConn);
-	// 계정 번호를 파라미터로 바인딩
-	BindParameter(m_DBConn, 1, &accountNo);
-	// 쿼리 실행
-	m_DBConn->Execute(query);
-
-	// 결과를 저장할 변수들 선언
-	WCHAR userid[20];  // 사용자 ID
-	WCHAR usernick[20];  // 사용자 닉네임
-	int status;  // 상태
-
-	// 결과 열을 바인딩
-	//m_DBConn->BindCol(1, SQL_C_CHAR, sizeof(userid), userid, NULL);
-	//m_DBConn->BindCol(2, SQL_C_CHAR, sizeof(usernick), usernick, NULL);
-	//m_DBConn->BindCol(3, SQL_C_SLONG, sizeof(status), &status, NULL);
-	BindColumn(m_DBConn, 1, userid, sizeof(userid), NULL);
-	BindColumn(m_DBConn, 2, usernick, sizeof(usernick), NULL);
-	BindColumn(m_DBConn, 3, &status);
-
-	// 결과를 페치하고 응답 구조체에 값 설정
-	if (!m_DBConn->Fetch()) {
-		return false;
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
+	if (hdr == NULL) {
+		DebugBreak();
 	}
+	hdr->code = MONT_SERVER_PROTOCOL_CODE;
+	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
+	hdr->randKey = GetRandomKey();
+	body = perfMsg->DirectReserve<stMSG_MONITOR_DATA_UPDATE>();
+	body->Type = en_PACKET_SS_MONITOR_DATA_UPDATE;
+	body->DataType = dfMONITOR_DATA_TYPE_LOGIN_SERVER_CPU;
+	body->DataValue = m_PerfCounter->ProcessTotal();
+	body->TimeStamp = now;
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-	resMessage.AccountNo = accountNo;
-	resMessage.Status = static_cast<BYTE>(dfLOGIN_STATUS_OK);
-	//mbstowcs(resMessage.ID, (char*)userid, 20);
-	//mbstowcs(resMessage.Nickname, (char*)usernick, 20);
-	memcpy(&resMessage.ID, userid, sizeof(userid));
-	memcpy(&resMessage.Nickname, usernick, sizeof(usernick));
-	// GameServerIP, GameServerPort, ChatServerIP, ChatServerPort 설정
-	wcscpy_s(resMessage.GameServerIP, ECHO_GAME_SERVER_IP_WSTR);
-	resMessage.GameServerPort = ECHO_GAME_SERVER_POPT;
-	wcscpy_s(resMessage.ChatServerIP, CHATTING_SERVER_IP_WSTR);
-	resMessage.ChatServerPort = CHATTING_SERVER_POPT;
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
+	if (hdr == NULL) {
+		DebugBreak();
+	}
+	hdr->code = MONT_SERVER_PROTOCOL_CODE;
+	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
+	hdr->randKey = GetRandomKey();
+	body = perfMsg->DirectReserve<stMSG_MONITOR_DATA_UPDATE>();
+	body->Type = en_PACKET_SS_MONITOR_DATA_UPDATE;
+	body->DataType = dfMONITOR_DATA_TYPE_LOGIN_SERVER_MEM;
+	body->DataValue = m_PerfCounter->GetPerfCounterItem(dfMONITOR_DATA_TYPE_LOGIN_SERVER_MEM) / (1024 * 1024);
+	body->TimeStamp = now;
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-	return true;
-}
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
+	if (hdr == NULL) {
+		DebugBreak();
+	}
+	hdr->code = MONT_SERVER_PROTOCOL_CODE;
+	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
+	hdr->randKey = GetRandomKey();
+	body = perfMsg->DirectReserve<stMSG_MONITOR_DATA_UPDATE>();
+	body->Type = en_PACKET_SS_MONITOR_DATA_UPDATE;
+	body->DataType = dfMONITOR_DATA_TYPE_LOGIN_SESSION;
+	body->DataValue = m_NumOfLoginServerSessions;
+	body->TimeStamp = now;
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-void LoginServer::InsertSessionKeyToRedis(INT64 accountNo, const char* sessionKey)
-{
-	std::string accountNoStr = to_string(accountNo);
-	std::string sessionKeyStr(sessionKey);
-	uint32 retval;
-	m_RedisConn->set(accountNoStr, sessionKeyStr, retval);
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
+	if (hdr == NULL) {
+		DebugBreak();
+	}
+	hdr->code = MONT_SERVER_PROTOCOL_CODE;
+	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
+	hdr->randKey = GetRandomKey();
+	body = perfMsg->DirectReserve<stMSG_MONITOR_DATA_UPDATE>();
+	body->Type = en_PACKET_SS_MONITOR_DATA_UPDATE;
+	body->DataType = dfMONITOR_DATA_TYPE_LOGIN_AUTH_TPS;
+	body->DataValue = m_LoginServerAuthTPS;
+	body->TimeStamp = now;
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
+
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
+	if (hdr == NULL) {
+		DebugBreak();
+	}
+	hdr->code = MONT_SERVER_PROTOCOL_CODE;
+	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
+	hdr->randKey = GetRandomKey();
+	body = perfMsg->DirectReserve<stMSG_MONITOR_DATA_UPDATE>();
+	body->Type = en_PACKET_SS_MONITOR_DATA_UPDATE;
+	body->DataType = dfMONITOR_DATA_TYPE_LOGIN_PACKET_POOL;
+	body->DataValue = allocMemPoolUnitCnt;
+	body->TimeStamp = now;
+	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
+
+	SendPacketToServer(perfMsg);
 }
