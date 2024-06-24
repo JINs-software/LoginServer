@@ -4,17 +4,17 @@
 
 //#define	CONNECT_TIMEOUT_CHECK_SET
 
-#define LOGIN_SERVER_NUM_OF_DB_CONN			280
+#define LOGIN_SERVER_NUM_OF_DB_CONN			100
 
 //#define ODBC_CONNECTION_STRING				L"Driver={ODBC Driver 18 for SQL Server};Server=(localdb)\\MSSQLLocalDB;Database=TestDB;Trusted_Connection=Yes;"
-#define ODBC_CONNECTION_STRING				L"Driver={MySQL ODBC 8.4 ANSI Driver};Server=127.0.0.1;Database=accountdb;User=mainserver;Password=607281;Option=3;"
+#define ODBC_CONNECTION_STRING				L"Driver={MySQL ODBC 8.4 ANSI Driver};Server=10.0.1.2;Database=accountdb;User=mainserver;Password=607281;Option=3;"
 																				// MySQL DB Server: 10.0.1.2
 
-#define LOGIN_SERVER_IP						"127.0.0.1"
+#define LOGIN_SERVER_IP						NULL
 #define LOGIN_SERVER_PORT					12110
 
 #define NUM_OF_IOCP_CONCURRENT_THREAD		2		// default
-#define NUM_OFIOCP_WORKER_THREAD			280
+#define NUM_OFIOCP_WORKER_THREAD			100
 #define MAX_CLIENT_CONNECTION				18000
 
 #define NUM_OF_TLSMEMPOOL_INIT_MEM_UNIT		1000
@@ -29,7 +29,7 @@
 
 #define CONNECT_LOGIN_REQ_TIMEOUT_SEC		3
 
-#define REDIS_TOKEN_SERVER_IP				"127.0.0.1"
+#define REDIS_TOKEN_SERVER_IP				"10.0.2.2"
 #define REDIS_TOKEN_SERVER_PORT				6379
 
 #define ECHO_GAME_SERVER_IP_WSTR			L"127.0.0.1"

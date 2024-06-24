@@ -2,6 +2,15 @@
 #include "CRedisConn.h"
 
 bool LoginServer::Start() {
+#if defined(CONNECT_TO_MONITORING_SERVER)
+	m_ServerMont = new LoginServerMont(GetTlsMemPoolManager(), m_SerialBufferSize, MONT_SERVER_PROTOCOL_CODE, MONT_SERVER_PACKET_KEY);
+	if (m_ServerMont == NULL) {
+		std::cout << "[LoginServer::Start] new LoginServerMont() return NULL" << std::endl;
+		return false;
+	}
+	m_ServerMont->Start();
+#endif
+
 	// Redis 커넥션
 	bool firstConn = true;
 	for (uint16 i = 0; i < m_NumOfIOCPWorkers; i++) {
@@ -34,16 +43,6 @@ bool LoginServer::Start() {
 		return false;
 	}
 
-
-#if defined(CONNECT_TO_MONITORING_SERVER)
-	m_ServerMont = new LoginServerMont(GetTlsMemPoolManager(), m_SerialBufferSize, MONT_SERVER_PROTOCOL_CODE, MONT_SERVER_PACKET_KEY);
-	if (m_ServerMont == NULL) {
-		std::cout << "[LoginServer::Start] new LoginServerMont() return NULL" << std::endl;
-		return false;
-	}
-	m_ServerMont->Start();
-#endif
-
 	m_ServerStart = true;
 
 	return true;
@@ -62,14 +61,23 @@ void LoginServer::Stop() {
 	}
 }
 
-void LoginServer::OnClientJoin(UINT64 sesionID)
+void LoginServer::OnClientJoin(UINT64 sessionID, const SOCKADDR_IN& clientSockAddr)
 {
 #if defined(CONNECT_TIMEOUT_CHECK_SET)
 	// 접속 현황 맵에 삽입
 	AcquireSRWLockExclusive(&m_ConnectionMapSrwLock);
-	m_ConnectionMap.insert({ sesionID, time(NULL) });
+	m_ConnectionMap.insert({ sessionID, time(NULL) });
 	ReleaseSRWLockExclusive(&m_ConnectionMapSrwLock);
 #endif
+
+	m_ClientHostAddrMapMtx.lock();
+	if (m_ClientHostAddrMap.find(sessionID) != m_ClientHostAddrMap.end()) {
+		DebugBreak();
+	}
+	else {
+		m_ClientHostAddrMap.insert({ sessionID, clientSockAddr });
+	}
+	m_ClientHostAddrMapMtx.unlock();
 
 #if defined(CONNECT_TO_MONITORING_SERVER)
 	m_ServerMont->IncrementSessionCount();
@@ -78,6 +86,16 @@ void LoginServer::OnClientJoin(UINT64 sesionID)
 
 void LoginServer::OnClientLeave(UINT64 sessionID)
 {
+	m_ClientHostAddrMapMtx.lock();
+	if (m_ClientHostAddrMap.find(sessionID) == m_ClientHostAddrMap.end()) {
+		// 로그인 처리 후 클라이언트에서 먼저 끊는 방식이라면, OnClientLeave에서 삭제 처리
+		DebugBreak();
+	}
+	else {
+		m_ClientHostAddrMap.erase(sessionID);
+	}
+	m_ClientHostAddrMapMtx.unlock();
+
 #if defined(CONNECT_TO_MONITORING_SERVER)
 	m_ServerMont->DecrementSessionCount();
 #endif
@@ -133,16 +151,14 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 		//std::cout << "CheckSessionKey Success!!!" << std::endl;
 
 		// 3. Account 정보 획득(stMSG_LOGIN_RES 메시지 활용)
-		if (!GetAccountInfo(message.AccountNo, resMessage.ID, resMessage.Nickname, resMessage.GameServerIP, resMessage.GameServerPort, resMessage.ChatServerIP, resMessage.ChatServerPort)) {
+		if (!GetAccountInfo(message.AccountNo, resMessage.ID, resMessage.Nickname/*, resMessage.GameServerIP, resMessage.GameServerPort, resMessage.ChatServerIP, resMessage.ChatServerPort*/)) {
 			//	실패 시 세션 연결 종료
 			std::cout << "GetAccountInfo Fail..." << std::endl;
 			resMessage.Status = dfLOGIN_STATUS_FAIL;
 			InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
 		}
 		else {
-			//std::cout << "GetAccountInfo Success!!!" << std::endl;
-			// 
-			// 3. Redis에 토큰 삽입
+			// 4. Redis에 토큰 삽입
 			if (!InsertSessionKeyToRedis(message.AccountNo, message.SessionKey)) {
 				std::cout << "InsertSessionKeyToRedis Fail..." << std::endl;
 				resMessage.Status = dfLOGIN_STATUS_FAIL;
@@ -151,8 +167,39 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 		}
 	}
 	
+	// 5. 서버 IP/Port 설정
+	m_ClientHostAddrMapMtx.lock();
+	auto iter = m_ClientHostAddrMap.find(sessionID);
+	if (iter == m_ClientHostAddrMap.end()) {
+		DebugBreak();
+	}
+	SOCKADDR_IN clientAddr = iter->second;
+	m_ClientHostAddrMapMtx.unlock();
 	
-	// 4. 클라이언트에 토큰 전송 (WSASend)
+	char clientIP[16] = { 0, };
+	IN_ADDR_TO_STRING(clientAddr.sin_addr, clientIP);
+
+	if (memcmp(clientIP, m_Client_CLASS1, 16) == 0) {
+		memcpy(resMessage.GameServerIP, L"10.0.1.1", sizeof(resMessage.GameServerIP));
+		resMessage.GameServerPort = ECHO_GAME_SERVER_POPT;
+		memcpy(resMessage.ChatServerIP, L"10.0.1.1", sizeof(resMessage.ChatServerIP));
+		resMessage.ChatServerPort = CHATTING_SERVER_POPT;
+	}
+	else if (memcmp(clientIP, m_Client_CLASS2, 16) == 0) {
+		memcpy(resMessage.GameServerIP, L"10.0.2.1", sizeof(resMessage.GameServerIP));
+		resMessage.GameServerPort = ECHO_GAME_SERVER_POPT;
+		memcpy(resMessage.ChatServerIP, L"10.0.2.1", sizeof(resMessage.ChatServerIP));
+		resMessage.ChatServerPort = CHATTING_SERVER_POPT;
+	}
+	else {
+		memcpy(resMessage.GameServerIP, L"127.0.0.1", sizeof(resMessage.GameServerIP));
+		resMessage.GameServerPort = ECHO_GAME_SERVER_POPT;
+		memcpy(resMessage.ChatServerIP, L"127.0.0.1", sizeof(resMessage.ChatServerIP));
+		resMessage.ChatServerPort = CHATTING_SERVER_POPT;
+	}
+	
+	
+	// 6. 클라이언트에 토큰 전송 (WSASend)
 	Proc_LOGIN_RES(sessionID, resMessage.AccountNo, resMessage.Status, resMessage.ID, resMessage.Nickname, resMessage.GameServerIP, resMessage.GameServerPort, resMessage.ChatServerIP, resMessage.ChatServerPort);
 }
 
@@ -213,7 +260,7 @@ bool LoginServer::CheckSessionKey(INT64 accountNo, const char* sessionKey)
 	return ret;
 }
 
-bool LoginServer::GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname, WCHAR* gameserverIP, USHORT& gameserverPort, WCHAR* chatserverIP, USHORT& chatserverPort)
+bool LoginServer::GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname)
 {
 	bool ret;
 
@@ -255,10 +302,6 @@ bool LoginServer::GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname, WC
 
 	memcpy(ID, userid, sizeof(userid));
 	memcpy(Nickname, usernick, sizeof(usernick));
-	memcpy(gameserverIP, ECHO_GAME_SERVER_IP_WSTR, sizeof(WCHAR[16]));
-	gameserverPort = ECHO_GAME_SERVER_POPT;
-	memcpy(chatserverIP, CHATTING_SERVER_IP_WSTR, sizeof(WCHAR[16]));
-	chatserverPort = CHATTING_SERVER_POPT;
 
 	return ret;
 }

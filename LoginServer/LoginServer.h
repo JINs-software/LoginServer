@@ -22,6 +22,13 @@ private:
 	bool							m_ServerStart;			// Stop 호출 시 플래그 on, Stop 호출 없이 서버 객체 소멸자 호출 시 Stop 함수 호출(정리 작업)
 	uint16							m_NumOfIOCPWorkers;		// IOCP 작업자 스레드 별 Redis 커넥션을 맺기 위해 생성자에서 해당 변수 초기화
 
+	// 클라이언트 세션ID <->  클라이언트 호스트 주소 맵핑
+	std::map<UINT64, SOCKADDR_IN>	m_ClientHostAddrMap;
+	std::mutex						m_ClientHostAddrMapMtx;
+
+	const char m_Client_CLASS1[16] = "10.0.1.2";
+	const char m_Client_CLASS2[16] = "10.0.2.2";
+
 	/*********************************
 	* DB
 	*********************************/
@@ -91,7 +98,7 @@ public:
 protected:
 	// 로그인 서버 접속 클라이언트 연결
 	// - LoginServerMont::IncrementSessionCount() 호출
-	virtual void OnClientJoin(UINT64 sesionID) override;
+	virtual void OnClientJoin(UINT64 sessionID, const SOCKADDR_IN& clientSockAddr) override;
 
 	// 로그인 서버 접속 클라이언트 연결 종료
 	// - DecrementSessionCount
@@ -107,7 +114,7 @@ protected:
 private:
 	// DB 접근
 	bool CheckSessionKey(INT64 accountNo, const char* sessionKey);
-	bool GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname, WCHAR* gameserverIP, USHORT& gameserverPort, WCHAR* chatserverIP, USHORT& chatserverPort);
+	bool GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname);
 
 	// Redis 접근
 	bool InsertSessionKeyToRedis(INT64 accountNo, const char* sessionKey);
