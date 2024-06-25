@@ -18,6 +18,21 @@ private:
 	uint64							m_TotalLoginFailCnt;	// 로그인 요청 메시지 처리 -> 인증 실패(DB 조회/계정 획득/Redis 토큰 삽입 실패) 
 															// -> 로그인 인증 실패 응답 메시지 송신 후 카운터 증가
 
+#if defined(DELEY_TIME_CHECK)
+	uint32							m_TotalLoginDelayMs = 0;
+	clock_t							m_MaxLoginDelayMs = 0;
+	clock_t							m_MinLoginDelayMs = LONG_MAX;
+	clock_t							m_AvrLoginDelayMs = 0;
+;
+	uint32							m_TotalMsecInServer = 0;
+	uint32							m_MaxMsecInServer = 0;
+	uint32							m_MinMsecInServer = UINT_MAX;
+	clock_t							m_AvrMsecInServer = 0;
+
+	std::map<UINT64, clock_t>		m_MsecInServerMap;
+	std::mutex						m_MsecInServerMapMtx;
+#endif
+
 private:
 	bool							m_ServerStart;			// Stop 호출 시 플래그 on, Stop 호출 없이 서버 객체 소멸자 호출 시 Stop 함수 호출(정리 작업)
 	uint16							m_NumOfIOCPWorkers;		// IOCP 작업자 스레드 별 Redis 커넥션을 맺기 위해 생성자에서 해당 변수 초기화

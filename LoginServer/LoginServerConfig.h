@@ -4,7 +4,9 @@
 
 //#define	CONNECT_TIMEOUT_CHECK_SET
 
-#define LOGIN_SERVER_NUM_OF_DB_CONN			100
+#define DELEY_TIME_CHECK
+
+#define LOGIN_SERVER_NUM_OF_DB_CONN			200
 
 //#define ODBC_CONNECTION_STRING				L"Driver={ODBC Driver 18 for SQL Server};Server=(localdb)\\MSSQLLocalDB;Database=TestDB;Trusted_Connection=Yes;"
 #define ODBC_CONNECTION_STRING				L"Driver={MySQL ODBC 8.4 ANSI Driver};Server=10.0.1.2;Database=accountdb;User=mainserver;Password=607281;Option=3;"
@@ -14,7 +16,7 @@
 #define LOGIN_SERVER_PORT					12110
 
 #define NUM_OF_IOCP_CONCURRENT_THREAD		2		// default
-#define NUM_OFIOCP_WORKER_THREAD			100
+#define NUM_OFIOCP_WORKER_THREAD			200
 #define MAX_CLIENT_CONNECTION				18000
 
 #define NUM_OF_TLSMEMPOOL_INIT_MEM_UNIT		1000

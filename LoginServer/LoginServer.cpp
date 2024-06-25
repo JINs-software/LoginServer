@@ -80,7 +80,13 @@ void LoginServer::OnClientJoin(UINT64 sessionID, const SOCKADDR_IN& clientSockAd
 	m_ClientHostAddrMapMtx.unlock();
 
 #if defined(CONNECT_TO_MONITORING_SERVER)
-	m_ServerMont->IncrementSessionCount();
+	m_ServerMont->IncrementSessionCount(true);
+#endif
+
+#if defined(DELEY_TIME_CHECK)
+	m_MsecInServerMapMtx.lock();
+	m_MsecInServerMap.insert({ sessionID, clock()});
+	m_MsecInServerMapMtx.unlock();
 #endif
 }
 
@@ -97,7 +103,18 @@ void LoginServer::OnClientLeave(UINT64 sessionID)
 	m_ClientHostAddrMapMtx.unlock();
 
 #if defined(CONNECT_TO_MONITORING_SERVER)
-	m_ServerMont->DecrementSessionCount();
+	m_ServerMont->DecrementSessionCount(true);
+#endif
+
+#if defined(DELEY_TIME_CHECK)
+	m_MsecInServerMapMtx.lock();
+	auto iter = m_MsecInServerMap.find(sessionID);
+	clock_t timeInServer = clock() - iter->second;
+	m_TotalMsecInServer += timeInServer;
+	m_MaxMsecInServer = max(m_MaxMsecInServer, timeInServer);
+	m_MinMsecInServer = min(m_MinMsecInServer, timeInServer);
+	m_AvrMsecInServer = m_TotalMsecInServer / (m_TotalLoginCnt + m_TotalLoginFailCnt);
+	m_MsecInServerMapMtx.unlock();
 #endif
 }
 
@@ -112,7 +129,13 @@ void LoginServer::OnRecv(UINT64 sessionID, JBuffer& recvBuff)
 			stMSG_LOGIN_REQ message;
 			recvBuff >> message;
 			
+			clock_t start = clock();
 			Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
+			clock_t end = clock();
+			InterlockedAdd((LONG*)&m_TotalLoginDelayMs, end - start);
+			m_MaxLoginDelayMs = max(m_MaxLoginDelayMs, end - start);
+			m_MinLoginDelayMs = min(m_MinLoginDelayMs, end - start);
+			m_AvrLoginDelayMs = m_TotalLoginDelayMs / (m_TotalLoginCnt + m_TotalLoginFailCnt);
 		}
 	}
 }
@@ -146,6 +169,7 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 		std::cout << "CheckSessionKey Fail..." << std::endl;
 		resMessage.Status = dfLOGIN_STATUS_FAIL;
 		InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+		DebugBreak();
 	}
 	else {
 		//std::cout << "CheckSessionKey Success!!!" << std::endl;
@@ -156,6 +180,7 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 			std::cout << "GetAccountInfo Fail..." << std::endl;
 			resMessage.Status = dfLOGIN_STATUS_FAIL;
 			InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+			DebugBreak();
 		}
 		else {
 			// 4. Redis에 토큰 삽입
@@ -163,6 +188,7 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 				std::cout << "InsertSessionKeyToRedis Fail..." << std::endl;
 				resMessage.Status = dfLOGIN_STATUS_FAIL;
 				InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+				DebugBreak();
 			}
 		}
 	}
@@ -218,13 +244,18 @@ void LoginServer::Proc_LOGIN_RES(UINT64 sessionID, INT64 accountNo, BYTE status,
 	sendMessage->Enqueue((BYTE*)chatserverIP, sizeof(WCHAR[16]));
 	(*sendMessage) << chatserverPort;
 
-	//SendPacket(sessionID, sendMessage);
-	if (!SendPacket(sessionID, sendMessage)) {
-		m_SerialBuffPoolMgr.GetTlsMemPool().FreeMem(sendMessage);
+	//if (!SendPacket(sessionID, sendMessage)) {
+	//	m_SerialBuffPoolMgr.GetTlsMemPool().FreeMem(sendMessage);
+	//}
+
+	// blocking send 함수 호출
+	if (!SendPacketBlocking(sessionID, sendMessage)) {
+
+
 	}
 
 #if defined(CONNECT_TO_MONITORING_SERVER)
-	m_ServerMont->IncrementAuthTransaction();
+	m_ServerMont->IncrementAuthTransaction(true);
 #endif
 	InterlockedIncrement64((int64*)&m_TotalLoginCnt);
 }
@@ -283,9 +314,6 @@ bool LoginServer::GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname)
 	int status;  // 상태
 
 	// 결과 열을 바인딩
-	//m_DBConn->BindCol(1, SQL_C_CHAR, sizeof(userid), userid, NULL);
-	//m_DBConn->BindCol(2, SQL_C_CHAR, sizeof(usernick), usernick, NULL);
-	//m_DBConn->BindCol(3, SQL_C_SLONG, sizeof(status), &status, NULL);
 	BindColumn(dbConn, 1, userid, sizeof(userid), NULL);
 	BindColumn(dbConn, 2, usernick, sizeof(usernick), NULL);
 	BindColumn(dbConn, 3, &status);
@@ -337,8 +365,19 @@ void LoginServer::ServerConsoleLog() {
 	std::cout << "================       Login Server       ================" << std::endl;
 	std::cout << "[Login] Login Session Cnt          : " << m_ServerMont->GetNumOfLoginServerSessions() << std::endl;
 	std::cout << "[Login] Login Auth TPS             : " << m_ServerMont->GetLoginServerAuthTPS() << std::endl;
-	std::cout << "[Login] Login Total Logined Cnt    : " << m_TotalLoginCnt << std::endl;
-	std::cout << "[Login] Login Total Login Fail Cnt : " << m_TotalLoginFailCnt << std::endl;
+	std::cout << "[Login] Login Total Login Success  : " << m_TotalLoginCnt << std::endl;
+	std::cout << "[Login] Login Total Login Fail     : " << m_TotalLoginFailCnt << std::endl;
+	if (m_TotalLoginCnt > 0) {
+		std::cout << "[Login] Total Time in Server   : " << m_TotalMsecInServer << std::endl;
+		std::cout << "[Login] Average Time in Server : " << m_AvrMsecInServer << std::endl;
+		std::cout << "[Login] Max Time in Server     : " << m_MaxMsecInServer << std::endl;
+		std::cout << "[Login] Min Time in Server     : " << m_MinMsecInServer << std::endl;
+
+		std::cout << "[Proc Delay] Total Delay Ms    : " << m_TotalLoginDelayMs << std::endl;
+		std::cout << "[Proc Delay] Average Delay Ms  : " << m_AvrLoginDelayMs << std::endl;
+		std::cout << "[Proc Delay] Max Delay Ms      : " << m_MaxLoginDelayMs << std::endl;
+		std::cout << "[Proc Delay] Min Delay Ms      : " << m_MinLoginDelayMs << std::endl;
+	}
 }
 
 #if defined(CONNECT_TIMEOUT_CHECK_SET)
