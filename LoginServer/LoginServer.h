@@ -94,7 +94,7 @@ public:
 	)
 		: CLanOdbcServer(dbConnectionCnt, odbcConnStr, serverIP, serverPort, numOfIocpConcurrentThrd, numOfWorkerThreads, maxOfConnections,
 			tlsMemPoolDefaultUnitCnt, tlsMemPoolDefaultUnitCapacity, tlsMemPoolReferenceFlag, tlsMemPoolPlacementNewFlag,
-			serialBufferSize, sessionRecvBuffSize, protocolCode, packetKey),
+			serialBufferSize, sessionRecvBuffSize, protocolCode, packetKey, RECV_BUFFERING_MODE, DB_CONNECTION_ERROR_FILE_LOGGING),
 		m_ServerStart(false), m_NumOfIOCPWorkers(numOfWorkerThreads),
 		m_TotalLoginCnt(0), m_TotalLoginFailCnt(0)
 	{

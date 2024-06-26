@@ -262,6 +262,9 @@ void LoginServer::Proc_LOGIN_RES(UINT64 sessionID, INT64 accountNo, BYTE status,
 
 bool LoginServer::CheckSessionKey(INT64 accountNo, const char* sessionKey)
 {
+	/***************************************
+	* DB 커넥션 타임아웃에 대비한 코드로 변경
+	* *************************************/
 	bool ret;
 
 	// 더미 테스트
@@ -269,24 +272,36 @@ bool LoginServer::CheckSessionKey(INT64 accountNo, const char* sessionKey)
 	SQLLEN sqlLen = 0;
 
 	DBConnection* dbConn;
-	while ((dbConn = HoldDBConnection()) == NULL);	// DBConnection 획득까지 polling
+	bool dbProcSuccess = false;
+	while (!dbProcSuccess) {
+		// 1. DB 커넥션 할당
+		while ((dbConn = HoldDBConnection()) == NULL);	// DBConnection 획득까지 polling
 
-	// 이전 바인딩 해제
-	UnBind(dbConn);
+		// 2. 이전 바인딩 해제
+		UnBind(dbConn);
 
-	// 첫 번째 파라미터로 계정 번호 바인딩
-	BindParameter(dbConn, 1, &accountNo);
+		// 3. 첫 번째 파라미터로 계정 번호 바인딩
+		if (BindParameter(dbConn, 1, &accountNo)) {
+			// 4. 쿼리 실행
+			if (!ExecQuery(dbConn, query)) {
+				FreeDBConnection(dbConn, true, true);
+				continue;
+			}
+			else {
+				if (GetRowCount(dbConn) > 0) {
+					ret = true;
+				}
+				else {
+					ret = false;
+				}
 
-	// 쿼리 실행
-	ExecQuery(dbConn, query);
+				dbProcSuccess = true;
+			}
 
-	if (GetRowCount(dbConn) > 0) {
-		ret = true;
+		}
+
+		FreeDBConnection(dbConn);
 	}
-	else {
-		ret = false;
-	}
-	FreeDBConnection(dbConn);
 
 	return ret;
 }
