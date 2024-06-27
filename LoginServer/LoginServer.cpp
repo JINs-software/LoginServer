@@ -642,6 +642,7 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
 #if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
@@ -659,6 +660,7 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
 #if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
@@ -676,6 +678,7 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
 #if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
@@ -693,6 +696,7 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
+	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
 #if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
