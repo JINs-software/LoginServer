@@ -10,6 +10,7 @@ namespace RedisCpp {
 }
 
 class LoginServerMont;
+class Logger;
 
 class LoginServer : public CLanOdbcServer
 {
@@ -76,6 +77,10 @@ private:
 	* Monitoring
 	*********************************/
 	LoginServerMont*			m_ServerMont;		// LoginServer::Start 함수에서 생성 및 Start 호출
+#endif
+
+#if !defined(LOGIN_SERVER_ASSERT)
+	Logger* m_Logger;
 #endif
 
 public:
@@ -155,9 +160,7 @@ public:
 		m_MontConnected(false), m_MontConnectting(false)
 	{}
 
-	void Start() {
-		m_CounterThread = (HANDLE)_beginthreadex(NULL, 0, PerformanceCountFunc, this, 0, NULL);
-	}
+	void Start();
 
 	inline void IncrementSessionCount(bool threadSafe = false) {
 		if (threadSafe) {
@@ -203,6 +206,10 @@ private:
 	bool					m_Stop;
 	HANDLE					m_CounterThread;
 
+#if !defined(LOGIN_SERVER_ASSERT) 
+	Logger*					m_Logger;
+#endif
+
 	virtual void OnClientNetworkThreadStart() override;
 	virtual void OnServerConnected() override;
 	virtual void OnServerLeaved() override;
@@ -212,4 +219,36 @@ private:
 	
 	static UINT __stdcall PerformanceCountFunc(void* arg);
 	void SendCounterToMontServer();
+};
+
+
+class Logger {
+public:
+	Logger(const std::string& filename) : logFile(filename, std::ios::app) {
+		if (!logFile.is_open()) {
+			throw std::runtime_error("Unable to open log file.");
+		}
+	}
+
+	~Logger() {
+		if (logFile.is_open()) {
+			logFile.close();
+		}
+	}
+
+	void log(const std::string& message) {
+		if (logFile.is_open()) {
+			logFile << "[" << getCurrentTime() << "] " << message << std::endl;
+		}
+	}
+
+private:
+	std::ofstream logFile;
+
+	std::string getCurrentTime() {
+		std::time_t now = std::time(nullptr);
+		char buf[100];
+		std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+		return std::string(buf);
+	}
 };

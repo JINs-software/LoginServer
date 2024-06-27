@@ -1,5 +1,7 @@
 #pragma once
 
+//#define LOGIN_SERVER_ASSERT
+
 #define CONNECT_TO_MONITORING_SERVER
 
 //#define	CONNECT_TIMEOUT_CHECK_SET

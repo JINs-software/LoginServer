@@ -2,6 +2,10 @@
 #include "CRedisConn.h"
 
 bool LoginServer::Start() {
+#if !defined(LOGIN_SERVER_ASSERT)
+	m_Logger = new Logger("LoginServerLog.txt");
+#endif
+
 #if defined(CONNECT_TO_MONITORING_SERVER)
 	m_ServerMont = new LoginServerMont(GetTlsMemPoolManager(), m_SerialBufferSize, MONT_SERVER_PROTOCOL_CODE, MONT_SERVER_PACKET_KEY);
 	if (m_ServerMont == NULL) {
@@ -72,11 +76,16 @@ void LoginServer::OnClientJoin(UINT64 sessionID, const SOCKADDR_IN& clientSockAd
 
 	m_ClientHostAddrMapMtx.lock();
 	if (m_ClientHostAddrMap.find(sessionID) != m_ClientHostAddrMap.end()) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("OnClientJoin, m_ClientHostAddrMap.find(sessionID) != m_ClientHostAddrMap.end()");
+#endif
 	}
 	else {
 		m_ClientHostAddrMap.insert({ sessionID, clientSockAddr });
 	}
+
 	m_ClientHostAddrMapMtx.unlock();
 
 #if defined(CONNECT_TO_MONITORING_SERVER)
@@ -94,12 +103,17 @@ void LoginServer::OnClientLeave(UINT64 sessionID)
 {
 	m_ClientHostAddrMapMtx.lock();
 	if (m_ClientHostAddrMap.find(sessionID) == m_ClientHostAddrMap.end()) {
+#if defined(LOGIN_SERVER_ASSERT)
 		// 로그인 처리 후 클라이언트에서 먼저 끊는 방식이라면, OnClientLeave에서 삭제 처리
 		DebugBreak();
+#else
+		m_Logger->log("OnClientLeave, m_ClientHostAddrMap.find(sessionID) == m_ClientHostAddrMap.end()");
+#endif
 	}
 	else {
 		m_ClientHostAddrMap.erase(sessionID);
 	}
+
 	m_ClientHostAddrMapMtx.unlock();
 
 #if defined(CONNECT_TO_MONITORING_SERVER)
@@ -109,11 +123,22 @@ void LoginServer::OnClientLeave(UINT64 sessionID)
 #if defined(DELEY_TIME_CHECK)
 	m_MsecInServerMapMtx.lock();
 	auto iter = m_MsecInServerMap.find(sessionID);
-	clock_t timeInServer = clock() - iter->second;
-	m_TotalMsecInServer += timeInServer;
-	m_MaxMsecInServer = max(m_MaxMsecInServer, timeInServer);
-	m_MinMsecInServer = min(m_MinMsecInServer, timeInServer);
-	m_AvrMsecInServer = m_TotalMsecInServer / (m_TotalLoginCnt + m_TotalLoginFailCnt);
+	if (iter != m_MsecInServerMap.end()) {
+		clock_t timeInServer = clock() - iter->second;
+		m_TotalMsecInServer += timeInServer;
+		m_MaxMsecInServer = max(m_MaxMsecInServer, timeInServer);
+		m_MinMsecInServer = min(m_MinMsecInServer, timeInServer);
+		m_AvrMsecInServer = m_TotalMsecInServer / (m_TotalLoginCnt + m_TotalLoginFailCnt);
+
+		m_MsecInServerMap.erase(iter);
+	}
+	else {
+#if defined(LOGIN_SERVER_ASSERT)
+		DebugBreak();
+#else
+		m_Logger->log("OnClientLeave, m_MsecInServerMap.find(sessionID) == m_MsecInServerMap.end()");
+#endif
+	}
 	m_MsecInServerMapMtx.unlock();
 #endif
 }
@@ -165,30 +190,37 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 
 	// 2. DB 조회
 	if (!CheckSessionKey(message.AccountNo, message.SessionKey)) {
-		//	실패 시 세션 연결 종료
-		std::cout << "CheckSessionKey Fail..." << std::endl;
 		resMessage.Status = dfLOGIN_STATUS_FAIL;
 		InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("CheckSessionKey(" + to_string(message.AccountNo) + ", " + message.SessionKey + ") returns Fail");
+#endif
 	}
 	else {
 		//std::cout << "CheckSessionKey Success!!!" << std::endl;
 
 		// 3. Account 정보 획득(stMSG_LOGIN_RES 메시지 활용)
 		if (!GetAccountInfo(message.AccountNo, resMessage.ID, resMessage.Nickname/*, resMessage.GameServerIP, resMessage.GameServerPort, resMessage.ChatServerIP, resMessage.ChatServerPort*/)) {
-			//	실패 시 세션 연결 종료
-			std::cout << "GetAccountInfo Fail..." << std::endl;
 			resMessage.Status = dfLOGIN_STATUS_FAIL;
 			InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+#if defined(LOGIN_SERVER_ASSERT)
 			DebugBreak();
+#else
+			m_Logger->log("GetAccountInfo(" + to_string(message.AccountNo) + ", ..) returns Fail");
+#endif
 		}
 		else {
 			// 4. Redis에 토큰 삽입
 			if (!InsertSessionKeyToRedis(message.AccountNo, message.SessionKey)) {
-				std::cout << "InsertSessionKeyToRedis Fail..." << std::endl;
 				resMessage.Status = dfLOGIN_STATUS_FAIL;
 				InterlockedIncrement64((int64*)&m_TotalLoginFailCnt);
+#if defined(LOGIN_SERVER_ASSERT)
 				DebugBreak();
+#else
+				m_Logger->log("InsertSessionKeyToRedis(" + to_string(message.AccountNo) + ", " + message.SessionKey + ") returns Fail");
+#endif
 			}
 		}
 	}
@@ -197,7 +229,11 @@ void LoginServer::Proc_LOGIN_REQ(UINT64 sessionID, stMSG_LOGIN_REQ message)
 	m_ClientHostAddrMapMtx.lock();
 	auto iter = m_ClientHostAddrMap.find(sessionID);
 	if (iter == m_ClientHostAddrMap.end()) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("Proc_LOGIN_REQ, (서버 IP/Port 설정) m_ClientHostAddrMap.find(sessionID) == m_ClientHostAddrMap.end()");
+#endif
 	}
 	SOCKADDR_IN clientAddr = iter->second;
 	m_ClientHostAddrMapMtx.unlock();
@@ -314,38 +350,51 @@ bool LoginServer::GetAccountInfo(INT64 accountNo, WCHAR* ID, WCHAR* Nickname)
 	const WCHAR* query = L"SELECT a.userid, a.usernick, s.status FROM accountdb.account a JOIN accountdb.status s ON a.accountno = s.accountno WHERE a.accountno = ?";
 
 	DBConnection* dbConn;
-	while ((dbConn = HoldDBConnection()) == NULL);	// DBConnection 획득까지 polling
+	bool dbProcSuccess = false;
+	while (!dbProcSuccess) {
+		while ((dbConn = HoldDBConnection()) == NULL);	// DBConnection 획득까지 polling
 
-	// 이전 바인딩 해제
-	UnBind(dbConn);
-	// 계정 번호를 파라미터로 바인딩
-	BindParameter(dbConn, 1, &accountNo);
-	// 쿼리 실행
-	dbConn->Execute(query);
+		// 이전 바인딩 해제
+		UnBind(dbConn);
 
-	// 결과를 저장할 변수들 선언
-	WCHAR userid[20];  // 사용자 ID
-	WCHAR usernick[20];  // 사용자 닉네임
-	int status;  // 상태
+		// 계정 번호를 파라미터로 바인딩
+		if (BindParameter(dbConn, 1, &accountNo)) {
+			// 쿼리 실행
+			if (!ExecQuery(dbConn, query)) {
+				FreeDBConnection(dbConn, true, true);
+				continue;
+			}
+			else {
+				// 결과를 저장할 변수들 선언
+				WCHAR userid[20];  // 사용자 ID
+				WCHAR usernick[20];  // 사용자 닉네임
+				int status;  // 상태
 
-	// 결과 열을 바인딩
-	BindColumn(dbConn, 1, userid, sizeof(userid), NULL);
-	BindColumn(dbConn, 2, usernick, sizeof(usernick), NULL);
-	BindColumn(dbConn, 3, &status);
+				// 결과 열을 바인딩
+				BindColumn(dbConn, 1, userid, sizeof(userid), NULL);
+				BindColumn(dbConn, 2, usernick, sizeof(usernick), NULL);
+				BindColumn(dbConn, 3, &status);
 
-	// 결과를 페치하고 응답 구조체에 값 설정
-	if (!dbConn->Fetch()) {
-		ret = false;
+				// 결과를 페치하고 응답 구조체에 값 설정
+				if (!dbConn->Fetch()) {
+					ret = false;
+				}
+				else {
+					ret = true;
+
+					memcpy(ID, userid, sizeof(userid));
+					memcpy(Nickname, usernick, sizeof(usernick));
+				}
+
+				dbProcSuccess = true;
+			}
+		}
+
+		FreeDBConnection(dbConn);
+
 	}
-	else {
-		ret = true;
-	}
 
-	FreeDBConnection(dbConn);
-
-	memcpy(ID, userid, sizeof(userid));
-	memcpy(Nickname, usernick, sizeof(usernick));
-
+	
 	return ret;
 }
 
@@ -392,6 +441,10 @@ void LoginServer::ServerConsoleLog() {
 		std::cout << "[Proc Delay] Average Delay Ms  : " << m_AvrLoginDelayMs << std::endl;
 		std::cout << "[Proc Delay] Max Delay Ms      : " << m_MaxLoginDelayMs << std::endl;
 		std::cout << "[Proc Delay] Min Delay Ms      : " << m_MinLoginDelayMs << std::endl;
+
+		std::cout << std::endl;
+		std::cout << "m_MsecInServerMap Size  : " << m_MsecInServerMap.size() << std::endl;
+		std::cout << "m_ClientHostAddrMap Size: " << m_ClientHostAddrMap.size() << std::endl;
 	}
 }
 
@@ -449,6 +502,14 @@ UINT __stdcall LoginServer::TimeOutCheckThreadFunc(void* arg)
 /*****************************************************************************************************
 * LoginServerMont
 *****************************************************************************************************/
+
+void LoginServerMont::Start() {
+#if !defined(LOGIN_SERVER_ASSERT)
+	m_Logger = new Logger("LoginServerMontLog.txt");
+#endif
+	m_CounterThread = (HANDLE)_beginthreadex(NULL, 0, PerformanceCountFunc, this, 0, NULL);
+}
+
 void LoginServerMont::OnClientNetworkThreadStart()
 {
 	AllocTlsMemPool();
@@ -534,13 +595,24 @@ void LoginServerMont::SendCounterToMontServer()
 	size_t allocMemPoolUnitCnt = GetAllocMemPoolUsageUnitCnt();
 
 	JBuffer* perfMsg = AllocSerialBuff();
+	if (perfMsg == NULL) {
+#if defined(LOGIN_SERVER_ASSERT)
+		DebugBreak();
+#else
+		m_Logger->log("SendCounterToMontServe, AllocSerialBuff() returns NULL");
+#endif
+	}
 
 	stMSG_HDR* hdr;
 	stMSG_MONITOR_DATA_UPDATE* body;
 
 	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("SendCounterToMontServe, hdr = perfMsg->DirectReserve<stMSG_HDR>() == NULL (dfMONITOR_DATA_TYPE_LOGIN_SERVER_RUN)");
+#endif
 	}
 	hdr->code = MONT_SERVER_PROTOCOL_CODE;
 	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
@@ -554,7 +626,11 @@ void LoginServerMont::SendCounterToMontServer()
 
 	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("SendCounterToMontServe, hdr = perfMsg->DirectReserve<stMSG_HDR>() == NULL (dfMONITOR_DATA_TYPE_LOGIN_SERVER_CPU)");
+#endif
 	}
 	hdr->code = MONT_SERVER_PROTOCOL_CODE;
 	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
@@ -566,9 +642,12 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("SendCounterToMontServe, hdr = perfMsg->DirectReserve<stMSG_HDR>() == NULL (dfMONITOR_DATA_TYPE_LOGIN_SERVER_MEM)");
+#endif
 	}
 	hdr->code = MONT_SERVER_PROTOCOL_CODE;
 	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
@@ -580,9 +659,12 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("SendCounterToMontServe, hdr = perfMsg->DirectReserve<stMSG_HDR>() == NULL (dfMONITOR_DATA_TYPE_LOGIN_SESSION)");
+#endif
 	}
 	hdr->code = MONT_SERVER_PROTOCOL_CODE;
 	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
@@ -594,9 +676,12 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("SendCounterToMontServe, hdr = perfMsg->DirectReserve<stMSG_HDR>() == NULL (dfMONITOR_DATA_TYPE_LOGIN_AUTH_TPS)");
+#endif
 	}
 	hdr->code = MONT_SERVER_PROTOCOL_CODE;
 	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
@@ -608,9 +693,12 @@ void LoginServerMont::SendCounterToMontServer()
 	body->TimeStamp = now;
 	Encode(hdr->randKey, hdr->len, hdr->checkSum, (BYTE*)body, MONT_SERVER_PACKET_KEY);
 
-	hdr = perfMsg->DirectReserve<stMSG_HDR>();
 	if (hdr == NULL) {
+#if defined(LOGIN_SERVER_ASSERT)
 		DebugBreak();
+#else
+		m_Logger->log("SendCounterToMontServe, hdr = perfMsg->DirectReserve<stMSG_HDR>() == NULL (dfMONITOR_DATA_TYPE_LOGIN_PACKET_POOL)");
+#endif
 	}
 	hdr->code = MONT_SERVER_PROTOCOL_CODE;
 	hdr->len = sizeof(WORD) + sizeof(BYTE) + sizeof(int) + sizeof(int);
