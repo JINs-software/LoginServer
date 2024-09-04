@@ -2,14 +2,13 @@
 * 7일간의 로그인-채팅 서버 연동 테스트
   
 #### 테스트 조건
-* 테스트 조건
-  * 채팅 서버 Accept TPS: 200 이상
-  * Message Update TPS: 5000 이상
-  * Action Delay Avr: 60ms 이하
-  * 더미 프로그램(프로카데미 제공)
-    * 더미 그룹: 5000명 재접속 모드
+* 채팅 서버 Accept TPS: 200 이상
+* Message Update TPS: 5000 이상
+* Action Delay Avr: 60ms 이하
+* 더미 프로그램(프로카데미 제공)
+  * 더미 그룹: 5000명 재접속 모드
  
-#### 테스트 결과
+#### 테스트 결과 => 통과!
 * 더미 그룹 실행 중
   ![image](https://github.com/user-attachments/assets/4e28d144-f0bb-4982-8264-97b957b9978d)
   ![image](https://github.com/user-attachments/assets/19a9fd0c-dfba-40dc-befc-4ba9b5566663)
