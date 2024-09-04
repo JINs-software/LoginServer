@@ -1,6 +1,7 @@
 ### \[로그인 서버(with 채팅 서버) 성능/오류 테스트\]
 * 7일간의 로그인-채팅 서버 연동 테스트
-  
+  ![image](https://github.com/user-attachments/assets/94c10b75-1f2e-4191-8637-5edf9650285a)
+
 #### 테스트 조건
 * 채팅 서버 Accept TPS: 200 이상
 * Message Update TPS: 5000 이상
