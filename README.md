@@ -2,7 +2,7 @@
 
 https://github.com/JINs-software/LoginServer_JNet
 
-현재 프로젝트는 구 버전 라이브러리인 CLanLibrary(https://github.com/JINs-software/CLanLibrary) 기반이며, 성능 및 기능 테스트는 현 프로젝트에서 진행)
+> 현재 프로젝트는 구 버전 라이브러리인 CLanLibrary(https://github.com/JINs-software/CLanLibrary) 기반이며, 성능 및 기능 테스트는 현 프로젝트에서 진행)
 
 ### \[로그인 서버(with 채팅 서버) 성능/오류 테스트\]
 * 7일간의 로그인-채팅 서버 연동 테스트
