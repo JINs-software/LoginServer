@@ -3,7 +3,7 @@
 https://github.com/JINs-software/LoginServer_JNet
 
 <p align="center">
-  <img src="[https://velog.velcdn.com/images/jinh2352/post/5b35ce1b-7722-4257-b6f8-3c1dbd7288e1/image.png](https://github.com/user-attachments/assets/79177fdc-c687-4437-a7a5-cb04c07e2cec)" width="600">
+  <img src="https://github.com/user-attachments/assets/42850985-5ce7-4877-a5e7-251fd461932f" width="600">
 </p>
 
 > 현재 프로젝트는 구 버전 라이브러리인 CLanLibrary(https://github.com/JINs-software/CLanLibrary) 기반이며, 성능 및 기능 테스트는 현 프로젝트에서 진행)
@@ -21,6 +21,15 @@ https://github.com/JINs-software/LoginServer_JNet
  
 #### 테스트 결과 => 통과!
 * 더미 그룹 실행 중
+  <p align="center">
+    <img src="https://github.com/user-attachments/assets/4e28d144-f0bb-4982-8264-97b957b9978d" width="600">
+  </p>
+  <p align="center">
+    <img src="https://github.com/user-attachments/assets/19a9fd0c-dfba-40dc-befc-4ba9b5566663" width="600">
+  </p>
+  <p align="center">
+    <img src="https://github.com/user-attachments/assets/c849befa-fc64-4f3e-af8a-eb4296877fb1" width="600">
+  </p>
   ![image](https://github.com/user-attachments/assets/4e28d144-f0bb-4982-8264-97b957b9978d)
   ![image](https://github.com/user-attachments/assets/19a9fd0c-dfba-40dc-befc-4ba9b5566663)
   ![image](https://github.com/user-attachments/assets/c849befa-fc64-4f3e-af8a-eb4296877fb1)
