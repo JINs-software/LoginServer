@@ -6,7 +6,7 @@
 
 //#define	CONNECT_TIMEOUT_CHECK_SET
 
-#define DELEY_TIME_CHECK
+//#define DELEY_TIME_CHECK
 
 #define RECV_BUFFERING_MODE					false
 #define	DB_CONNECTION_ERROR_FILE_LOGGING	true

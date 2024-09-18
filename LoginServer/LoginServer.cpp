@@ -154,6 +154,7 @@ void LoginServer::OnRecv(UINT64 sessionID, JBuffer& recvBuff)
 			stMSG_LOGIN_REQ message;
 			recvBuff >> message;
 			
+#if defined(DELEY_TIME_CHECK)
 			clock_t start = clock();
 			Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
 			clock_t end = clock();
@@ -161,6 +162,9 @@ void LoginServer::OnRecv(UINT64 sessionID, JBuffer& recvBuff)
 			m_MaxLoginDelayMs = max(m_MaxLoginDelayMs, end - start);
 			m_MinLoginDelayMs = min(m_MinLoginDelayMs, end - start);
 			m_AvrLoginDelayMs = m_TotalLoginDelayMs / (m_TotalLoginCnt + m_TotalLoginFailCnt);
+#else 
+			Proc_LOGIN_REQ(sessionID, message);		// 1. 계정 DB 접근 및 계정 정보 확인
+#endif
 		}
 	}
 }
@@ -431,6 +435,7 @@ void LoginServer::ServerConsoleLog() {
 	std::cout << "[Login] Login Auth TPS             : " << m_ServerMont->GetLoginServerAuthTPS() << std::endl;
 	std::cout << "[Login] Login Total Login Success  : " << m_TotalLoginCnt << std::endl;
 	std::cout << "[Login] Login Total Login Fail     : " << m_TotalLoginFailCnt << std::endl;
+#if defined(DELEY_TIME_CHECK)
 	if (m_TotalLoginCnt > 0) {
 		std::cout << "[Login] Total Time in Server   : " << m_TotalMsecInServer << std::endl;
 		std::cout << "[Login] Average Time in Server : " << m_AvrMsecInServer << std::endl;
@@ -446,6 +451,7 @@ void LoginServer::ServerConsoleLog() {
 		std::cout << "m_MsecInServerMap Size  : " << m_MsecInServerMap.size() << std::endl;
 		std::cout << "m_ClientHostAddrMap Size: " << m_ClientHostAddrMap.size() << std::endl;
 	}
+#endif
 }
 
 #if defined(CONNECT_TIMEOUT_CHECK_SET)
