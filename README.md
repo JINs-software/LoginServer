@@ -2,6 +2,10 @@
 
 https://github.com/JINs-software/LoginServer_JNet
 
+<p align="center">
+  <img src="[https://velog.velcdn.com/images/jinh2352/post/5b35ce1b-7722-4257-b6f8-3c1dbd7288e1/image.png](https://github.com/user-attachments/assets/79177fdc-c687-4437-a7a5-cb04c07e2cec)" width="600">
+</p>
+
 > 현재 프로젝트는 구 버전 라이브러리인 CLanLibrary(https://github.com/JINs-software/CLanLibrary) 기반이며, 성능 및 기능 테스트는 현 프로젝트에서 진행)
 
 ### \[로그인 서버(with 채팅 서버) 성능/오류 테스트\]
